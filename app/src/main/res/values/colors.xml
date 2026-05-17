@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- App brand colors -->
+    <color name="wukong_primary">#FF1976D2</color>
+    <color name="wukong_primary_dark">#FF0D47A1</color>
+    <color name="wukong_accent">#FF448AFF</color>
+
+    <!-- State indicator colors -->
+    <color name="state_idle">#FF9E9E9E</color>
+    <color name="state_wakeup">#FF2196F3</color>
+    <color name="state_recording">#FF9C27B0</color>
+    <color name="state_processing">#FFFF9800</color>
+    <color name="state_playing">#FF4CAF50</color>
+    <color name="state_error">#FFF44336</color>
+</resources>

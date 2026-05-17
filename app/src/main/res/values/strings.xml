@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wukong Agent</string>
+    <string name="notification_channel_name">Wukong Service</string>
+    <string name="notification_channel_desc">Keep wukong agent running in background</string>
+    <string name="notification_title">Wukong Agent</string>
+    <string name="notification_text_idle">Listening for wake word…</string>
+    <string name="notification_text_recording">Recording…</string>
+    <string name="notification_text_playing">Speaking…</string>
+    <string name="notification_text_error">Service error</string>
+    <string name="notification_permission_rationale">Notification permission is needed to show service status in the notification bar.</string>
+    <string name="notification_permission_denied">Notification permission denied. Service status updates won\'t appear in the notification bar.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="pref_category_connection">Connection</string>
+    <string name="pref_ws_url_title">WebSocket Server</string>
+    <string name="pref_ws_url_summary">Server address for voice chat</string>
+    <string name="pref_ws_url_default">wss://localhost:8080/ws</string>
+    <string name="pref_category_wake_word">Wake Word</string>
+    <string name="pref_wake_wukong_title">Wake word: Wukong Wukong</string>
+    <string name="pref_wake_wukong_summary">Enable \"Wukong Wukong\" wake word</string>
+    <string name="pref_wake_nihao_title">Wake word: Hello Wukong</string>
+    <string name="pref_wake_nihao_summary">Enable \"Hello Wukong\" wake word</string>
+    <string name="pref_ncm_wukong_title">Wukong NCM threshold</string>
+    <string name="pref_ncm_nihao_title">Hello Wukong NCM threshold</string>
+    <string name="pref_category_audio">Audio</string>
+    <string name="pref_tts_volume_title">TTS Volume</string>
+    <string name="pref_vad_silence_title">VAD Silence Duration (ms)</string>
+    <string name="pref_vad_energy_title">VAD Energy Threshold</string>
+    <string name="pref_category_timeout">Timeout</string>
+    <string name="pref_recording_timeout_title">Recording Timeout (ms)</string>
+    <string name="pref_processing_timeout_title">Processing Timeout (ms)</string>
+    <string name="pref_playing_timeout_title">Playing Timeout (ms)</string>
+    <string name="pref_category_advanced">Advanced</string>
+    <string name="pref_service_control_title">Service Control</string>
+    <string name="pref_service_start">Start Service</string>
+    <string name="pref_service_stop">Stop Service</string>
+    <string name="pref_llm_model_title">LLM Model</string>
+    <string name="pref_llm_model_summary">Select the language model (future feature)</string>
+    <string name="pref_status_title">Current State</string>
+    <string name="pref_status_summary">IDLE</string>
+
+    <!-- State labels -->
+    <string name="state_idle">Idle</string>
+    <string name="state_wakeup">Wakeup</string>
+    <string name="state_recording">Recording</string>
+    <string name="state_processing">Processing</string>
+    <string name="state_playing">Playing</string>
+</resources>

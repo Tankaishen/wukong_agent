@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- Service Status -->
+    <PreferenceCategory
+        app:title="@string/pref_status_title"
+        app:iconSpaceReserved="false">
+        <Preference
+            app:key="@string/pref_key_service_status"
+            app:title="@string/pref_status_title"
+            app:summary="@string/pref_status_summary"
+            app:selectable="false" />
+    </PreferenceCategory>
+
+    <!-- Connection -->
+    <PreferenceCategory
+        app:title="@string/pref_category_connection"
+        app:iconSpaceReserved="false">
+        <EditTextPreference
+            app:key="@string/pref_key_ws_url"
+            app:title="@string/pref_ws_url_title"
+            app:summary="@string/pref_ws_url_summary"
+            app:defaultValue="@string/pref_default_ws_url"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <!-- Wake Word -->
+    <PreferenceCategory
+        app:title="@string/pref_category_wake_word"
+        app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat
+            app:key="@string/pref_key_wake_wukong_enabled"
+            app:title="@string/pref_wake_wukong_title"
+            app:summary="@string/pref_wake_wukong_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+        <SeekBarPreference
+            app:key="@string/pref_key_ncm_wukong"
+            app:title="@string/pref_ncm_wukong_title"
+            app:defaultValue="1200"
+            app:min="400"
+            android:max="3000"
+            app:seekBarIncrement="50"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="@string/pref_key_wake_nihao_enabled"
+            app:title="@string/pref_wake_nihao_title"
+            app:summary="@string/pref_wake_nihao_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+        <SeekBarPreference
+            app:key="@string/pref_key_ncm_nihao"
+            app:title="@string/pref_ncm_nihao_title"
+            app:defaultValue="1450"
+            app:min="400"
+            android:max="3000"
+            app:seekBarIncrement="50"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <!-- Audio -->
+    <PreferenceCategory
+        app:title="@string/pref_category_audio"
+        app:iconSpaceReserved="false">
+        <SeekBarPreference
+            app:key="@string/pref_key_tts_volume"
+            app:title="@string/pref_tts_volume_title"
+            app:defaultValue="80"
+            app:min="0"
+            android:max="100"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+        <SeekBarPreference
+            app:key="@string/pref_key_vad_silence_ms"
+            app:title="@string/pref_vad_silence_title"
+            app:defaultValue="1500"
+            app:min="500"
+            android:max="5000"
+            app:seekBarIncrement="100"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+        <SeekBarPreference
+            app:key="@string/pref_key_vad_energy"
+            app:title="@string/pref_vad_energy_title"
+            app:defaultValue="500"
+            app:min="100"
+            android:max="3000"
+            app:seekBarIncrement="50"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <!-- Timeout -->
+    <PreferenceCategory
+        app:title="@string/pref_category_timeout"
+        app:iconSpaceReserved="false">
+        <SeekBarPreference
+            app:key="@string/pref_key_recording_timeout_ms"
+            app:title="@string/pref_recording_timeout_title"
+            app:defaultValue="30000"
+            app:min="5000"
+            android:max="60000"
+            app:seekBarIncrement="1000"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+        <SeekBarPreference
+            app:key="@string/pref_key_processing_timeout_ms"
+            app:title="@string/pref_processing_timeout_title"
+            app:defaultValue="10000"
+            app:min="3000"
+            android:max="30000"
+            app:seekBarIncrement="1000"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+        <SeekBarPreference
+            app:key="@string/pref_key_playing_timeout_ms"
+            app:title="@string/pref_playing_timeout_title"
+            app:defaultValue="60000"
+            app:min="5000"
+            android:max="120000"
+            app:seekBarIncrement="5000"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <!-- Advanced -->
+    <PreferenceCategory
+        app:title="@string/pref_category_advanced"
+        app:iconSpaceReserved="false">
+        <EditTextPreference
+            app:key="@string/pref_key_llm_model"
+            app:title="@string/pref_llm_model_title"
+            app:summary="@string/pref_llm_model_summary"
+            app:defaultValue=""
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+</androidx.preference.PreferenceScreen>

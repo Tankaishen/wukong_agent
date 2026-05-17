@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Preference keys - centralized management -->
+
+    <!-- Connection -->
+    <string name="pref_key_ws_url" translatable="false">ws_server_url</string>
+
+    <!-- Wake word -->
+    <string name="pref_key_wake_wukong_enabled" translatable="false">wake_word_wukong_enabled</string>
+    <string name="pref_key_wake_nihao_enabled" translatable="false">wake_word_nihao_enabled</string>
+    <string name="pref_key_ncm_wukong" translatable="false">wake_word_ncm_wukong</string>
+    <string name="pref_key_ncm_nihao" translatable="false">wake_word_ncm_nihao</string>
+
+    <!-- Audio -->
+    <string name="pref_key_tts_volume" translatable="false">tts_volume</string>
+    <string name="pref_key_vad_silence_ms" translatable="false">vad_silence_duration_ms</string>
+    <string name="pref_key_vad_energy" translatable="false">vad_energy_threshold</string>
+
+    <!-- Timeout -->
+    <string name="pref_key_recording_timeout_ms" translatable="false">recording_timeout_ms</string>
+    <string name="pref_key_processing_timeout_ms" translatable="false">processing_timeout_ms</string>
+    <string name="pref_key_playing_timeout_ms" translatable="false">playing_timeout_ms</string>
+
+    <!-- Advanced -->
+    <string name="pref_key_llm_model" translatable="false">llm_model_name</string>
+    <string name="pref_key_service_status" translatable="false">service_status</string>
+
+    <!-- Default values -->
+    <string name="pref_default_ws_url" translatable="false">wss://localhost:8080/ws</string>
+    <string name="pref_default_ncm_wukong" translatable="false">1200</string>
+    <string name="pref_default_ncm_nihao" translatable="false">1450</string>
+
+    <!-- Notification channel -->
+    <string name="notification_channel_id" translatable="false">wukong_service_channel</string>
+</resources>
