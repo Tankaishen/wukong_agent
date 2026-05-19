@@ -5,35 +5,68 @@ import android.content.res.AssetManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.iflytek.aikit.core.AiAudio;
+import com.iflytek.aikit.core.AiHandle;
 import com.iflytek.aikit.core.AiHelper;
 import com.iflytek.aikit.core.AiListener;
+import com.iflytek.aikit.core.AiRequest;
+import com.iflytek.aikit.core.AiResponse;
+import com.iflytek.aikit.core.AiStatus;
+import com.iflytek.aikit.core.BaseLibrary;
+import com.iflytek.aikit.core.CoreListener;
+import com.iflytek.aikit.core.ErrType;
+import com.iflytek.aikit.core.LogLvl;
 import com.wukong.agent.interfaces.IWakeUpEngine;
-import com.wukong.agent.util.AudioUtils;
 
 /**
- * AIKit (iFlytek) wake word engine implementation.
+ * AIKit (iFlytek) wake word engine implementation for production use.
  *
- * Credentials are loaded from assets/wake_engine.properties via ConfigManager,
- * then passed to init() as a Map with keys: appId, apiKey, apiSecret, workDir.
+ * Call flow (from iFlytek sample):
+ *   SDK init (BaseLibrary.Params + initEntry)
+ *   → registerListener(ABILITY_ID, aiListener)
+ *   → startListening: loadData → specifyDataSet → start
+ *   → feedAudioData: write audio with AiStatus
+ *   → stopListening: end
+ *   → release: unInit
  *
- * NOTE: AIKit AiHelper classes are referenced directly.
- * In production, the AIKit.aar is in libs/ and these classes resolve normally.
- * For unit testing without the AAR, use reflection or mocking.
+ * Resource requirements:
+ *   - IVW model files must exist in workDir/ivw/:
+ *     IVW_FILLER_1, IVW_GRAM_1, IVW_KEYWORD_1, IVW_MLP_1
+ *   - These are copied from assets/xunfeiResource/ivw/ at init time
+ *
+ * Keyword file format (no nCM in file, threshold set via param):
+ *   悟空悟空;
+ *   你好悟空;
  */
 public class AikitWakeEngine implements IWakeUpEngine {
 
     private static final String TAG = "AikitWakeEngine";
+
+    /** AIKit IVW70 ability ID */
     private static final String ABILITY_ID = "e867a88f2";
+
+    /** Assets path for IVW model files */
+    private static final String IVW_ASSET_DIR = "xunfeiResource/ivw";
+
+    /** Assets path for keyword file template */
     private static final String KEYWORD_ASSET_PATH = "aikit_resources/keyword.txt";
+
+    /** Subdirectory under workDir for IVW resources */
+    private static final String IVW_SUBDIR = "ivw";
 
     // Credential keys expected in the credentials Map
     private static final String KEY_APP_ID = "appId";
@@ -42,16 +75,31 @@ public class AikitWakeEngine implements IWakeUpEngine {
     private static final String KEY_WORK_DIR = "workDir";
     private static final String DEFAULT_WORK_DIR = "aikit_workspace";
 
+    // Audio constants (16bit 16kHz mono)
+    private static final int SAMPLE_RATE = 16000;
+    private static final int CHANNELS = 1;
+    private static final int BITS_PER_SAMPLE = 16;
+    /** Recommended write size: ~40ms of audio at 16kHz 16bit mono = 1280 bytes */
+    private static final int WRITE_CHUNK_SIZE = 1280;
+
     private Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private WakeUpListener listener;
-    private boolean isListening = false;
-    private boolean isInitialized = false;
-    private String keywordFilePath;
 
-    // AIKit handle (using Object to allow testing without AAR)
-    private Object aiHandle;
+    private boolean isInitialized = false;
+    private final AtomicBoolean isListening = new AtomicBoolean(false);
+    private AiHandle aiHandle;
+    private String workDirPath;   // absolute path of workDir
+    private String keywordFilePath; // absolute path of keyword.txt on disk
+
+    // nCM threshold values (default: 悟空悟空 1200, 你好悟空 1450)
+    private int ncmWukong = 1200;
+    private int ncmNihao = 1450;
+    private boolean wukongEnabled = true;
+    private boolean nihaoEnabled = true;
+    // Tracks whether keyword file needs rewriting (true on first init or config change)
+    private volatile boolean keywordDirty = true;
 
     public AikitWakeEngine() {
         // No-arg constructor; Context is provided via init()
@@ -65,6 +113,8 @@ public class AikitWakeEngine implements IWakeUpEngine {
         String apiKey = credentials.get(KEY_API_KEY);
         String apiSecret = credentials.get(KEY_API_SECRET);
         String workDirName = credentials.containsKey(KEY_WORK_DIR)
+                && credentials.get(KEY_WORK_DIR) != null
+                && !credentials.get(KEY_WORK_DIR).isEmpty()
                 ? credentials.get(KEY_WORK_DIR) : DEFAULT_WORK_DIR;
 
         // Validate required credentials
@@ -89,28 +139,36 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
         executor.execute(() -> {
             try {
-                // Copy keyword file from assets to workDir
+                // 1. Prepare workDir
                 File workDir = new File(context.getFilesDir(), workDirName);
                 if (!workDir.exists()) {
                     workDir.mkdirs();
                 }
-                keywordFilePath = copyKeywordFile(workDir.getAbsolutePath());
+                workDirPath = workDir.getAbsolutePath();
+                Log.i(TAG, "Work directory: " + workDirPath);
 
-                // Initialize AIKit SDK
-                AiHelper.Params params = AiHelper.Params.builder()
+                // 2. Copy IVW model resources from assets to workDir/ivw/
+                copyIvwResources(workDirPath);
+
+                // 3. Generate keyword file in workDir/ivw/
+                keywordFilePath = generateKeywordFile();
+
+                // 4. Initialize AIKit SDK (use BaseLibrary.Params + initEntry as per sample)
+                BaseLibrary.Params params = BaseLibrary.Params.builder()
                     .appId(appId.trim())
                     .apiKey(apiKey.trim())
                     .apiSecret(apiSecret.trim())
-                    .ability(ABILITY_ID)
-                    .workDir(workDir.getAbsolutePath())
+                    .workDir(workDirPath)
                     .build();
-                AiHelper.getInst().init(context, params);
 
-                // Register result listener
+                AiHelper.getInst().registerListener(coreListener);
+                AiHelper.getInst().initEntry(context, params);
+
+                // 5. Register IVW ability listener
                 AiHelper.getInst().registerListener(ABILITY_ID, aiListener);
 
                 isInitialized = true;
-                Log.i(TAG, "AIKit initialized successfully (appId=" + appId.trim() + ")");
+                Log.i(TAG, "AIKit SDK initialized (appId=" + appId.trim() + ")");
 
             } catch (Exception e) {
                 Log.e(TAG, "Failed to initialize AIKit", e);
@@ -131,12 +189,12 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
     @Override
     public boolean isListening() {
-        return isListening;
+        return isListening.get();
     }
 
     @Override
     public void startListening() {
-        if (isListening) {
+        if (isListening.get()) {
             Log.w(TAG, "Already listening");
             return;
         }
@@ -148,11 +206,51 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
         executor.execute(() -> {
             try {
-                // AiRequest.Builder paramBuilder = AiRequest.builder();
-                // aiHandle = AiHelper.getInst().start(ABILITY_ID, paramBuilder.build(), null);
+                // Step 1: Write keyword file to disk
+                if (!keyword2File()) {
+                    notifyError("Failed to write keyword file");
+                    return;
+                }
 
-                isListening = true;
-                Log.i(TAG, "Started listening for wake words");
+                // Step 2: Load keyword data into engine
+                AiRequest.Builder customBuilder = AiRequest.builder();
+                customBuilder.customText("key_word", keywordFilePath, 0);
+                int ret = AiHelper.getInst().loadData(ABILITY_ID, customBuilder.build());
+                if (ret != 0) {
+                    Log.e(TAG, "loadData failed: " + ret);
+                    notifyError("IVW loadData failed: " + ret);
+                    return;
+                }
+                Log.i(TAG, "loadData success");
+
+                // Step 3: Specify data set
+                int[] indexes = {0};
+                ret = AiHelper.getInst().specifyDataSet(ABILITY_ID, "key_word", indexes);
+                if (ret != 0) {
+                    Log.e(TAG, "specifyDataSet failed: " + ret);
+                    notifyError("IVW specifyDataSet failed: " + ret);
+                    return;
+                }
+                Log.i(TAG, "specifyDataSet success");
+
+                // Step 4: Start engine session with parameters
+                AiRequest.Builder paramBuilder = AiRequest.builder();
+                // nCM threshold format: "0 0:threshold" for first keyword
+                // Multiple keywords: "0 0:threshold1 1:threshold2"
+//                String ncmParam = buildNcmThresholdParam();
+//                paramBuilder.param("wdec_param_nCmThreshold", ncmParam);
+//                paramBuilder.param("gramLoad", true);
+
+                aiHandle = AiHelper.getInst().start(ABILITY_ID, paramBuilder.build(), null);
+                if (aiHandle.getCode() != 0) {
+                    Log.e(TAG, "IVW start failed: " + aiHandle.getCode());
+                    notifyError("IVW start failed: " + aiHandle.getCode());
+                    return;
+                }
+
+                isListening.set(true);
+                Log.i(TAG, "Started listening for wake words (nCmThreshold=" + ncmParam + ")");
+
             } catch (Exception e) {
                 Log.e(TAG, "Failed to start listening", e);
                 notifyError("Start listening failed: " + e.getMessage());
@@ -162,16 +260,20 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
     @Override
     public void stopListening() {
-        if (!isListening) return;
+        if (!isListening.get()) return;
 
         executor.execute(() -> {
             try {
-                // if (aiHandle != null) {
-                //     AiHelper.getInst().end((AiHandle) aiHandle);
-                // }
-
-                isListening = false;
-                Log.i(TAG, "Stopped listening for wake words");
+                if (aiHandle != null) {
+                    int ret = AiHelper.getInst().end(aiHandle);
+                    if (ret == 0) {
+                        Log.i(TAG, "Stopped listening (end success)");
+                    } else {
+                        Log.w(TAG, "end() returned: " + ret);
+                    }
+                    aiHandle = null;
+                }
+                isListening.set(false);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to stop listening", e);
             }
@@ -180,19 +282,54 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
     @Override
     public void feedAudioData(byte[] pcmData) {
-        if (!isListening) return;
+        if (!isListening.get() || aiHandle == null) {
+            Log.e(TAG, "Aikit is not listening or aiHandle is not initialized, can't feed audio data.");
+            return;
+        }
 
         executor.execute(() -> {
             try {
-                // AiRequest.Builder dataBuilder = AiRequest.builder();
-                // AiAudio.Holder wavData = AiAudio.get("wav")
-                //     .encoding(AiAudio.ENCODING_DEFAULT)
-                //     .data(pcmData);
-                // wavData.status(AiStatus.CONTINUE);
-                // dataBuilder.payload(wavData.valid());
-                // AiHelper.getInst().write(dataBuilder.build(), (AiHandle) aiHandle);
+                AiAudio aiAudio = AiAudio.get("wav")
+                    .data(pcmData)
+                    .status(AiStatus.CONTINUE)
+                    .valid();
+
+                AiRequest.Builder dataBuilder = AiRequest.builder();
+                dataBuilder.payload(aiAudio);
+
+                int ret = AiHelper.getInst().write(dataBuilder.build(), aiHandle);
+                if (ret != 0) {
+                    Log.w(TAG, "write() returned: " + ret);
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Error feeding audio data", e);
+            }
+        });
+    }
+
+    /**
+     * Feed audio data with explicit status (BEGIN/CONTINUE/END).
+     * Used when the caller needs to control the audio framing.
+     */
+    public void feedAudioData(byte[] pcmData, AiStatus status) {
+        if (!isListening.get() || aiHandle == null) return;
+
+        executor.execute(() -> {
+            try {
+                AiAudio aiAudio = AiAudio.get("wav")
+                    .data(pcmData)
+                    .status(status)
+                    .valid();
+
+                AiRequest.Builder dataBuilder = AiRequest.builder();
+                dataBuilder.payload(aiAudio);
+
+                int ret = AiHelper.getInst().write(dataBuilder.build(), aiHandle);
+                if (ret != 0) {
+                    Log.w(TAG, "write() returned: " + ret);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error feeding audio data with status", e);
             }
         });
     }
@@ -200,79 +337,197 @@ public class AikitWakeEngine implements IWakeUpEngine {
     @Override
     public void updateWakeWordConfig(boolean wukongEnabled, boolean nihaoEnabled,
                                       int ncmWukong, int ncmNihao) {
-        executor.execute(() -> {
-            try {
-                // Re-generate keyword file with updated values
-                StringBuilder sb = new StringBuilder();
-                if (wukongEnabled) {
-                    sb.append("\u609f\u7a7a\u609f\u7a7a;nCM:").append(ncmWukong).append(";\n");
-                }
-                if (nihaoEnabled) {
-                    sb.append("\u4f60\u597d\u609f\u7a7a;nCM:").append(ncmNihao).append(";\n");
-                }
+        this.wukongEnabled = wukongEnabled;
+        this.nihaoEnabled = nihaoEnabled;
+        this.ncmWukong = ncmWukong;
+        this.ncmNihao = ncmNihao;
+        this.keywordDirty = true;
 
-                // Write updated keyword file
-                if (keywordFilePath != null) {
-                    java.io.FileWriter writer = new java.io.FileWriter(keywordFilePath);
-                    writer.write(sb.toString());
-                    writer.close();
+        Log.i(TAG, "Wake word config updated: wukong=" + wukongEnabled +
+              " ncm=" + ncmWukong + ", nihao=" + nihaoEnabled + " ncm=" + ncmNihao);
 
-                    // Reload into AIKit
-                    // loadWakeWords();
-                }
-
-                Log.i(TAG, "Wake word config updated");
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to update wake word config", e);
-            }
-        });
+        // Note: changes take effect on next startListening() call.
+        // AIKit does not support hot-reloading keyword config while engine is running.
     }
 
     @Override
     public void release() {
         stopListening();
         executor.shutdownNow();
-        // AiHelper.getInst().unInit();
-        isListening = false;
+        try {
+            AiHelper.getInst().unInit();
+        } catch (Exception e) {
+            Log.w(TAG, "unInit exception (may be expected if not initialized)", e);
+        }
+        isListening.set(false);
         isInitialized = false;
     }
 
-    // ==================== Internal ====================
+    // ==================== Internal: Keyword File ====================
 
     /**
-     * Load wake word configuration into AIKit.
+     * Write keyword file to disk based on current config.
+     * Format (per iFlytek sample): one keyword per line, keyword followed by semicolon.
+     * No nCM in the file — thresholds are set via start param.
      */
-    private void loadWakeWords() {
-        if (keywordFilePath == null) return;
+    private boolean keyword2File() {
         try {
-            // AIRequest.Builder customBuilder = AIRequest.builder();
-            // customBuilder.customText("key_word", keywordFilePath, 0);
-            // AiHelper.getInst().loadData(ABILITY_ID, customBuilder.build());
-            // int[] indexs = {0};
-            // AiHelper.getInst().specifyDataSet(ABILITY_ID, "key_word", indexs);
-            Log.i(TAG, "Wake words loaded from: " + keywordFilePath);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load wake words", e);
+            File keywordFile = new File(keywordFilePath);
+
+            // Skip rewrite if file already exists and config hasn't changed
+            if (keywordFile.exists() && !keywordDirty) {
+                Log.i(TAG, "Keyword file already exists and config unchanged, skip rewrite");
+                return true;
+            }
+
+            // Delete existing files when rewrite is needed
+            if (keywordFile.exists()) {
+                keywordFile.delete();
+            }
+            // Also clean up the .bin cache file that AIKit generates
+            File binFile = new File(keywordFilePath + ".bin");
+            if (binFile.exists()) {
+                binFile.delete();
+            }
+
+            keywordFile.createNewFile();
+
+            OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(keywordFile), "UTF-8");
+            if (wukongEnabled) {
+                writer.write("悟空悟空;nCM:"+ncmWukong+";");
+                writer.write("\n");
+            }
+            if (nihaoEnabled) {
+                writer.write("你好悟空;nCM:"+ncmNihao+";");
+                writer.write("\n");
+            }
+            writer.close();
+
+            keywordDirty = false;
+            Log.i(TAG, "Keyword file written: " + keywordFilePath);
+            return true;
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to write keyword file", e);
+            return false;
         }
     }
 
     /**
-     * Copy keyword file from assets to working directory.
+     * Build the nCmThreshold parameter string.
+     * Format: "0 0:threshold0 1:threshold1" (index 0 = first keyword, etc.)
+     *
+     * Example with both keywords enabled:
+     *   "0 0:1200 1:1450"
+     * Example with only wukong:
+     *   "0 0:1200"
      */
-    private String copyKeywordFile(String workDir) throws IOException {
-        File destDir = new File(workDir, "ivw");
+    private String buildNcmThresholdParam() {
+        StringBuilder sb = new StringBuilder("0");
+        int index = 0;
+        if (wukongEnabled) {
+            sb.append(" ").append(index).append(":").append(ncmWukong);
+            index++;
+        }
+        if (nihaoEnabled) {
+            sb.append(" ").append(index).append(":").append(ncmNihao);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Generate initial keyword file path (workDir/ivw/keyword.txt).
+     */
+    private String generateKeywordFile() {
+        File ivwDir = new File(workDirPath, IVW_SUBDIR);
+        if (!ivwDir.exists()) {
+            ivwDir.mkdirs();
+        }
+        return new File(ivwDir, "keyword.txt").getAbsolutePath();
+    }
+
+    // ==================== Internal: Resource Copy ====================
+
+    /**
+     * Copy IVW model resources from assets/xunfeiResource/ivw/ to workDir/ivw/.
+     * These model files (IVW_FILLER_1, IVW_GRAM_1, IVW_KEYWORD_1, IVW_MLP_1)
+     * are required by the AIKit IVW engine.
+     */
+    private void copyIvwResources(String workDir) throws IOException {
+        File ivwDir = new File(workDir, IVW_SUBDIR);
+        if (!ivwDir.exists()) {
+            ivwDir.mkdirs();
+        }
+
+        AssetManager assets = context.getAssets();
+        String[] files = assets.list(IVW_ASSET_DIR);
+        if (files == null || files.length == 0) {
+            Log.w(TAG, "No IVW resources found in assets/" + IVW_ASSET_DIR);
+            return;
+        }
+
+        for (String fileName : files) {
+            String assetPath = IVW_ASSET_DIR + "/" + fileName;
+            File destFile = new File(ivwDir, fileName);
+
+            // Skip if already exists and not a directory
+            if (destFile.exists() && !destFile.isDirectory()) {
+                // Check if we need to update (compare size)
+                InputStream is = assets.open(assetPath);
+                long assetSize = is.available();
+                is.close();
+                if (destFile.length() == assetSize) {
+                    continue; // Already copied, skip
+                }
+            }
+
+            // Handle subdirectories (like AudioCache)
+            String[] subFiles = assets.list(assetPath);
+            if (subFiles != null && subFiles.length > 0) {
+                // It's a directory, copy recursively
+                copyAssetDir(assets, assetPath, destFile);
+            } else {
+                // It's a file, copy it
+                copyAssetFile(assets, assetPath, destFile);
+            }
+        }
+
+        Log.i(TAG, "IVW resources copied to " + ivwDir.getAbsolutePath());
+    }
+
+    /**
+     * Recursively copy an asset directory.
+     */
+    private void copyAssetDir(AssetManager assets, String assetDir, File destDir) throws IOException {
         if (!destDir.exists()) {
             destDir.mkdirs();
         }
-        File destFile = new File(destDir, "keyword.txt");
+        String[] files = assets.list(assetDir);
+        if (files == null) return;
 
-        AssetManager assets = context.getAssets();
+        for (String fileName : files) {
+            String childAssetPath = assetDir + "/" + fileName;
+            File childDest = new File(destDir, fileName);
+
+            String[] subFiles = assets.list(childAssetPath);
+            if (subFiles != null && subFiles.length > 0) {
+                copyAssetDir(assets, childAssetPath, childDest);
+            } else {
+                copyAssetFile(assets, childAssetPath, childDest);
+            }
+        }
+    }
+
+    /**
+     * Copy a single asset file to destination.
+     */
+    private void copyAssetFile(AssetManager assets, String assetPath, File destFile) throws IOException {
         InputStream is = null;
         OutputStream os = null;
         try {
-            is = assets.open(KEYWORD_ASSET_PATH);
+            is = assets.open(assetPath);
             os = new FileOutputStream(destFile);
-            byte[] buffer = new byte[1024];
+            byte[] buffer = new byte[4096];
             int length;
             while ((length = is.read(buffer)) > 0) {
                 os.write(buffer, 0, length);
@@ -281,37 +536,147 @@ public class AikitWakeEngine implements IWakeUpEngine {
             if (is != null) is.close();
             if (os != null) os.close();
         }
-
-        return destFile.getAbsolutePath();
     }
 
-    // ==================== AIKit Result Listener ====================
+    // ==================== AIKit Listeners ====================
 
     /**
-     * AIKit result listener.
-     * In production, this should implement com.iflytek.aikit.core.AiListener.
-     * Currently using a simple implementation for structure.
+     * SDK core listener — monitors auth state and init completion.
+     */
+    private final CoreListener coreListener = new CoreListener() {
+        @Override
+        public void onAuthStateChange(ErrType type, int code) {
+            switch (type) {
+                case AUTH:
+                    if (code == 0) {
+                        Log.i(TAG, "AIKit authorization success");
+                    } else {
+                        Log.e(TAG, "AIKit authorization failed, code: " + code);
+                        notifyError("AIKit auth failed, code: " + code);
+                    }
+                    break;
+                case HTTP:
+                    Log.w(TAG, "AIKit HTTP auth result: " + code);
+                    break;
+                default:
+                    Log.w(TAG, "AIKit other event, code: " + code);
+                    break;
+            }
+        }
+    };
+
+    /**
+     * IVW ability result listener.
+     * Callback signature matches iFlytek sample:
+     *   onResult(int handleID, List<AiResponse> outputData, Object usrContext)
+     *
+     * Response parsing:
+     *   key = "func_wake_up" → wake word detected
+     *   key = "func_pre_wakeup" → pre-wake (low confidence)
+     *   value = JSON string with keyword info
      */
     private final AiListener aiListener = new AiListener() {
         @Override
-        public void onResult(com.iflytek.aikit.core.AiResponse aiResponse) {
-            // Parse wake word result from AIKit response
-            // String keyword = ... ;
-            // int confidence = ... ;
-            // notifyWakeUp(keyword, confidence);
+        public void onResult(int handleID, List<AiResponse> outputData, Object usrContext) {
+            if (outputData == null || outputData.isEmpty()) return;
+
+            for (AiResponse response : outputData) {
+                String key = response.getKey();
+                byte[] bytes = response.getValue();
+                String result = new String(bytes);
+
+                Log.d(TAG, "IVW onResult: key=" + key + ", value=" + result +
+                      ", status=" + response.getStatus());
+
+                if ("func_wake_up".equals(key)) {
+                    // Wake word detected!
+                    // Parse keyword name from result string
+                    String keyword = parseWakeWordKeyword(result);
+                    int confidence = parseWakeWordConfidence(result);
+                    Log.i(TAG, "Wake word detected: " + keyword + " confidence=" + confidence);
+                    notifyWakeUp(keyword, confidence);
+                } else if ("func_pre_wakeup".equals(key)) {
+                    // Pre-wake detection (lower confidence, optional handling)
+                    Log.d(TAG, "Pre-wake detected: " + result);
+                }
+            }
         }
 
         @Override
-        public void onError(com.iflytek.aikit.core.AiError aiError) {
-            Log.e(TAG, "AIKit error: " + aiError.toString());
-            notifyError("AIKit error: " + aiError.toString());
+        public void onEvent(int handleID, int event, List<AiResponse> list, Object usrContext) {
+            Log.d(TAG, "IVW onEvent: handle=" + handleID + " event=" + event);
         }
 
         @Override
-        public void onInitDone() {
-            Log.i(TAG, "AIKit engine init done");
+        public void onError(int handleID, int errCode, String errInfo, Object usrContext) {
+            Log.e(TAG, "IVW onError: handle=" + handleID + " code=" + errCode + " info=" + errInfo);
+            notifyError("IVW engine error: " + errInfo);
         }
     };
+
+    /**
+     * Parse keyword name from AIKit wake result.
+     * The result format is typically JSON or structured text from iFlytek.
+     */
+    private String parseWakeWordKeyword(String result) {
+        // iFlytek IVW result typically contains keyword info
+        // Common format: {"keyword":"悟空悟空",...} or plain text
+        // For robustness, try JSON first, then fallback
+        try {
+            if (result.contains("\"keyword\"")) {
+                // Simple JSON extraction without Gson dependency
+                int start = result.indexOf("\"keyword\"") + "\"keyword\"".length();
+                // Find the value after colon
+                int colonIdx = result.indexOf(":", start);
+                if (colonIdx >= 0) {
+                    int valueStart = result.indexOf("\"", colonIdx) + 1;
+                    int valueEnd = result.indexOf("\"", valueStart);
+                    if (valueStart > 0 && valueEnd > valueStart) {
+                        return result.substring(valueStart, valueEnd);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to parse keyword from JSON, using raw result");
+        }
+        // Fallback: return first few chars or "unknown"
+        return result.length() > 20 ? result.substring(0, 20) + "..." : result;
+    }
+
+    /**
+     * Parse confidence from AIKit wake result.
+     */
+    private int parseWakeWordConfidence(String result) {
+        try {
+            if (result.contains("\"confidence\"") || result.contains("\"score\"")) {
+                String key = result.contains("\"confidence\"") ? "\"confidence\"" : "\"score\"";
+                int start = result.indexOf(key) + key.length();
+                int colonIdx = result.indexOf(":", start);
+                if (colonIdx >= 0) {
+                    int valueStart = colonIdx + 1;
+                    // Skip whitespace
+                    while (valueStart < result.length() &&
+                           (result.charAt(valueStart) == ' ' || result.charAt(valueStart) == '"')) {
+                        valueStart++;
+                    }
+                    int valueEnd = valueStart;
+                    while (valueEnd < result.length() &&
+                           (Character.isDigit(result.charAt(valueEnd)) ||
+                            result.charAt(valueEnd) == '.' || result.charAt(valueEnd) == '-')) {
+                        valueEnd++;
+                    }
+                    if (valueEnd > valueStart) {
+                        return (int) Float.parseFloat(result.substring(valueStart, valueEnd));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to parse confidence from result");
+        }
+        return -1; // Unknown confidence
+    }
+
+    // ==================== Notification Helpers ====================
 
     private void notifyWakeUp(String keyword, int confidence) {
         handler.post(() -> {

@@ -69,8 +69,8 @@ dependencies {
     // Local AAR libraries
 //    implementation(files("libs/opensdk-v1.1.0.aar"))
 //    implementation(files("libs/AIKit.aar"))
-    implementation(group = "",name= "opensdk-v1.1.0", ext = "aar")
-    implementation(group = "",name= "AIKit", ext = "aar")
+    implementation(group = "",name= "opensdk-v1.1.0",ext = "aar")
+    implementation(group = "",name= "AIKit", version="", ext = "aar")
 
     // Unit Testing
     testImplementation("junit:junit:4.13.2")
