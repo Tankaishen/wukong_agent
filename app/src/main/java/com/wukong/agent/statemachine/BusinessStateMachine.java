@@ -3,6 +3,9 @@ package com.wukong.agent.statemachine;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+
+import com.wukong.agent.model.RobotConfig;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -49,7 +52,7 @@ public class BusinessStateMachine {
         cancelAllTimeouts();
 
         Log.i(TAG, "State transition: " + oldState + " -> " + newState
-                + (reason != null ? " (" + reason + ")" : ""));
+                + (reason != null ? " (" + reason + ")" : "No reason"));
 
         currentState = newState;
         notifyStateChanged(oldState, newState);
@@ -152,6 +155,12 @@ public class BusinessStateMachine {
     public void setRecordingTimeoutMs(long ms) { this.recordingTimeoutMs = ms; }
     public void setProcessingTimeoutMs(long ms) { this.processingTimeoutMs = ms; }
     public void setPlayingTimeoutMs(long ms) { this.playingTimeoutMs = ms; }
+
+    public void applyConfigToStateMachine(RobotConfig config) {
+        this.setRecordingTimeoutMs(config.getRecordingTimeoutMs());
+        this.setProcessingTimeoutMs(config.getProcessingTimeoutMs());
+        this.setPlayingTimeoutMs(config.getPlayingTimeoutMs());
+    }
 
     public void cleanup() {
         cancelAllTimeouts();

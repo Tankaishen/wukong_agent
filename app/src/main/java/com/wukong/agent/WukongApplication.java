@@ -2,6 +2,8 @@ package com.wukong.agent;
 
 import android.app.Application;
 import android.util.Log;
+
+import com.wukong.agent.service.WukongService;
 import com.wukong.agent.watchdog.ServiceWatchdog;
 
 public class WukongApplication extends Application {
@@ -14,6 +16,7 @@ public class WukongApplication extends Application {
         Log.i(TAG, "WukongApplication onCreate");
 
         // Schedule watchdog to ensure service stays alive
+        WukongService.start(this);
         ServiceWatchdog.scheduleWatchdog(this);
     }
 }

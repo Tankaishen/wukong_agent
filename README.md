@@ -163,14 +163,14 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 {"type": "pong"}
 ```
 
-## 已知问题排查
+## 已知问题
 
 | 问题 | 可能原因 | 解决方案 |
 |------|---------|---------|
 | 服务启动后立即停止 | 未授予必要权限 | 检查录音、存储权限 |
 | 唤醒词无法识别 | AIKit未正确初始化 | 检查appId/apiKey/apiSecret配置 |
 | WebSocket连接失败 | 服务器地址错误或网络不通 | 检查URL配置和网络连接 |
-| TTS播放无声 | 音量设置过低 | 检查TTS音量配置 |
+| 音量设置过低 | 检查TTS音量配置 |
 | 机器人不执行动作 | opensdk未初始化 | 确认WkSdk.init()调用成功 |
 | 服务被系统杀死 | 内存不足 | 检查ForegroundService Notification是否显示 |
 
@@ -179,6 +179,15 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - [架构设计文档](docs/architecture.md)
 - [悟空2代SDK文档](opensdk文档/悟空2代SDK文档_V1.0.9_20260107.pdf)
 - [讯飞AIKit唤醒文档](https://www.xfyun.cn/doc/asr/AIkit_awaken/Android-SDK.html)
+
+## TO DO LIST
+1. 填入 AIKit 凭证：在 WukongService.initComponents() 中找到注释位置，填入 appId/apiKey/apiSecret 
+2. 连接真机测试：SDK 调用（AIKit、PreProcessedRecorder、opensdk）目前以注释形式存在，需要在真机上取消注释并测试 
+3. WebSocket 服务器：默认地址是 wss://localhost:8080/ws，可通过 SettingsActivity 修改 
+4. ServiceWatchdog.java：shouldRestart现在只是占位符，后续应改为真实的服务存活检查 
+5. WukongService.java：onStateChanged函数。状态机变换未完善，包括录音功能。状态机的WAKEUP状态可能需要加一个机器人响应。如“我在”。在onWakeUp函数加。 
+6. WukongService.java：onMessage现在只处理TTS数据，后续可能增加处理文本，用于存储日志，也可能不添加。
+7. 
 
 ## License
 

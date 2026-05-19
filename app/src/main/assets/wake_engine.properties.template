@@ -1,0 +1,17 @@
+# Wake engine selection: aikit | picovoice | baidu
+wake.engine=aikit
+
+# === AIKit (iFlytek) ===
+aikit.appId=
+aikit.apiKey=
+aikit.apiSecret=
+aikit.workDir=aikit_workspace
+
+# === Picovoice ===
+picovoice.accessKey=
+picovoice.keywordPath=leopard_keywords.ppn
+
+# === Baidu Speech ===
+baidu.appId=
+baidu.apiKey=
+baidu.secretKey=

@@ -9,9 +9,12 @@ import android.content.Context;
 import android.util.Log;
 import com.wukong.agent.service.WukongService;
 
+/*
+* 利用 Android JobScheduler 每 15 分钟触发一次，检查并确保 WukongService 存活的看门狗。
+* */
 public class ServiceWatchdog extends JobService {
 
-    private static final String TAG = "ServiceWatchdog";
+    private static final String TAG = "ServiceWatchdog"; // 日志标签常量
     private static final int JOB_ID = 1001;
     private static final long INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -19,12 +22,21 @@ public class ServiceWatchdog extends JobService {
     public boolean onStartJob(JobParameters params) {
         Log.d(TAG, "Watchdog check triggered");
 
-        // Check if service is running - simplified check
-        // In production, use a more robust check (e.g., checking a shared flag)
-        boolean shouldRestart = true; // Placeholder: implement actual check
+        // Real service alive check:
+        // 1. isRunning() — static volatile flag, true if service is alive in this process.
+        //    If process was killed, flag resets to false (default), so watchdog detects it.
+        // 2. isUserStopped() — persisted flag in SharedPreferences, true only if user
+        //    explicitly called WukongService.stop(). Cleared when service starts again.
+        boolean serviceAlive = WukongService.isRunning();
+        boolean userStopped = WukongService.isUserStopped(this);
 
-        if (shouldRestart) {
-            Log.i(TAG, "Ensuring WukongService is running");
+        if (serviceAlive) {
+            Log.i(TAG, "WukongService is running — no action needed");
+        } else if (userStopped) {
+            Log.i(TAG, "WukongService was stopped by user — respecting user intent, not restarting");
+        } else {
+            // Service not running and user didn't stop it → must have been killed by system
+            Log.i(TAG, "WukongService is not running and not user-stopped — restarting");
             WukongService.start(this);
         }
 

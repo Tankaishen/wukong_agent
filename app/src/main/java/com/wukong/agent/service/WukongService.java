@@ -8,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
@@ -19,6 +20,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.Observer;
+import androidx.preference.PreferenceManager;
 
 import com.ubtrobot.api.WkSdk;
 import com.wukong.agent.R;
@@ -27,6 +29,7 @@ import com.wukong.agent.data.db.WukongDatabase;
 import com.wukong.agent.data.repository.ChatHistoryRepository;
 import com.wukong.agent.data.repository.WakeUpLogRepository;
 import com.wukong.agent.data.repository.ActionRepository;
+import com.wukong.agent.interfaces.IWakeUpEngine;
 import com.wukong.agent.manager.*;
 import com.wukong.agent.model.RobotConfig;
 import com.wukong.agent.model.WebSocketMessage;
@@ -35,10 +38,11 @@ import com.wukong.agent.statemachine.BusinessState;
 import com.wukong.agent.statemachine.BusinessStateMachine;
 import com.wukong.agent.statemachine.StateChangeListener;
 import com.wukong.agent.util.AudioUtils;
+import com.wukong.agent.watchdog.ServiceWatchdog;
 
 public class WukongService extends Service implements
         StateChangeListener,
-        WakeUpManager.WakeUpListener,
+        IWakeUpEngine.WakeUpListener,
         AudioRecorderManager.AudioListener,
         WebSocketManager.WebSocketEventListener,
         TTSEngine.TTSListener {
@@ -46,12 +50,31 @@ public class WukongService extends Service implements
     private static final String TAG = "WukongService";
     private static final int NOTIFICATION_ID = 1001;
     private static final String CHANNEL_ID = "wukong_service_channel";
+    private static final String PREF_KEY_USER_STOPPED = "pref_user_stopped_service";
 
-    // Core components
+    /**
+     * Static volatile flag indicating whether the service is currently running.
+     * - Set true in onCreate(), false in onDestroy()
+     * - volatile ensures visibility across threads (watchdog JobScheduler may run
+     *   in a different thread within the same process)
+     * - If the process is killed by the system, this resets to false (default),
+     *   which is exactly what the watchdog needs to detect.
+     */
+    private static volatile boolean isRunning = false; // 核心双标志机制的第一标志
+
+    /**
+     * Check if the service is currently running.
+     * Used by ServiceWatchdog to determine if a restart is needed.
+     */
+    public static boolean isRunning() {
+        return isRunning;
+    }
+
+    // Core components, managers
     private BusinessStateMachine stateMachine;
     private RobotStateCoordinator coordinator;
     private ConfigManager configManager;
-    private WakeUpManager wakeUpManager;
+    private IWakeUpEngine wakeUpEngine;
     private AudioRecorderManager audioRecorderManager;
     private WebSocketManager webSocketManager;
     private TTSEngine ttsEngine;
@@ -72,6 +95,9 @@ public class WukongService extends Service implements
     public void onCreate() {
         super.onCreate();
         Log.i(TAG, "WukongService onCreate");
+
+        isRunning = true;
+        clearUserStoppedFlag();
 
         initNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification(BusinessState.IDLE));
@@ -95,11 +121,14 @@ public class WukongService extends Service implements
     @Override
     public void onDestroy() {
         Log.i(TAG, "WukongService onDestroy");
+        isRunning = false;
         cleanup();
         super.onDestroy();
 
-        // Schedule restart
-        sendBroadcast(new Intent("com.wukong.agent.RESTART_SERVICE"));
+        // Schedule restart (only effective if not user-initiated stop)
+        Intent intent = new Intent("com.wukong.agent.RESTART_SERVICE");
+        intent.setPackage(getPackageName()); // 原始代码是去掉这一行
+        sendBroadcast(intent);
     }
 
     // ==================== Initialization ====================
@@ -118,11 +147,14 @@ public class WukongService extends Service implements
         // State machine
         stateMachine = new BusinessStateMachine();
         stateMachine.addListener(this);
-        applyConfigToStateMachine(configManager.getConfig());
+        stateMachine.applyConfigToStateMachine(configManager.getConfig());
+//        applyConfigToStateMachine(configManager.getConfig());
 
-        // Managers
-        wakeUpManager = new WakeUpManager(this);
-        wakeUpManager.setListener(this);
+        // Wake engine (created via factory based on config)
+        RobotConfig config = configManager.getConfig();
+        wakeUpEngine = WakeEngineFactory.create(config.getWakeEngineType());
+        wakeUpEngine.setListener(this);
+        wakeUpEngine.init(this, config.getWakeEngineCredentials());
 
         audioRecorderManager = new AudioRecorderManager(this);
         audioRecorderManager.setListener(this);
@@ -145,9 +177,6 @@ public class WukongService extends Service implements
 
         // Initialize robot SDK
          WkSdk.INSTANCE.init(this);
-
-        // Initialize AIKit
-        // wakeUpManager.init(appId, apiKey, apiSecret, workDir);
 
         // Initialize PreProcessedRecorder
         audioRecorderManager.init();
@@ -190,7 +219,7 @@ public class WukongService extends Service implements
             case RECORDING:
                 // Already recording, WebSocket is receiving chunks
                 // Stop wake word listening during recording
-                wakeUpManager.stopListening();
+                wakeUpEngine.stopListening();
                 break;
 
             case PROCESSING:
@@ -229,6 +258,7 @@ public class WukongService extends Service implements
         if (current == BusinessState.IDLE) {
             // Normal wake up
             stateMachine.transitionTo(BusinessState.WAKEUP, "wake: " + keyword);
+            // 此处应加入“我在”的语音播放。
         } else if (current == BusinessState.PLAYING) {
             // Interrupt: stop TTS and start new recording
             ttsEngine.stopPlayback();
@@ -362,7 +392,7 @@ public class WukongService extends Service implements
         if (config == null) return;
 
         // Apply timeout settings
-        applyConfigToStateMachine(config);
+        stateMachine.applyConfigToStateMachine(config);
 
         // Update VAD parameters
         audioRecorderManager.setVadParameters(
@@ -378,23 +408,23 @@ public class WukongService extends Service implements
         }
 
         // Update wake word config
-        wakeUpManager.updateWakeWordConfig(
+        wakeUpEngine.updateWakeWordConfig(
             config.isWakeWukongEnabled(),
             config.isWakeNihaoEnabled(),
             config.getNcmWukong(),
             config.getNcmNihao());
     }
 
-    private void applyConfigToStateMachine(RobotConfig config) {
-        stateMachine.setRecordingTimeoutMs(config.getRecordingTimeoutMs());
-        stateMachine.setProcessingTimeoutMs(config.getProcessingTimeoutMs());
-        stateMachine.setPlayingTimeoutMs(config.getPlayingTimeoutMs());
-    }
+//    private void applyConfigToStateMachine(RobotConfig config) {
+//        stateMachine.setRecordingTimeoutMs(config.getRecordingTimeoutMs());
+//        stateMachine.setProcessingTimeoutMs(config.getProcessingTimeoutMs());
+//        stateMachine.setPlayingTimeoutMs(config.getPlayingTimeoutMs());
+//    }
 
     // ==================== Wake Word Control ====================
 
     private void startWakeWordListening() {
-        wakeUpManager.startListening();
+        wakeUpEngine.startListening();
         // Also start PreProcessedRecorder for wake word audio
         // PreProcessedRecorder.start() if not already started
         // PreProcessedRecorder.registerRecordListener(forWakeUp, AudioRecorder.Type.FOR_WAKEUP)
@@ -471,7 +501,7 @@ public class WukongService extends Service implements
 
     private void cleanup() {
         if (coordinator != null) coordinator.release();
-        if (wakeUpManager != null) wakeUpManager.release();
+        if (wakeUpEngine != null) wakeUpEngine.release();
         if (audioRecorderManager != null) audioRecorderManager.release();
         if (webSocketManager != null) webSocketManager.release();
         if (ttsEngine != null) ttsEngine.release();
@@ -486,6 +516,10 @@ public class WukongService extends Service implements
     // ==================== Static Control ====================
 
     public static void start(Context context) {
+        if (isRunning()){
+            Log.i(TAG, "WukongService is running — no action needed");
+            return;
+        }
         Intent intent = new Intent(context, WukongService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent);
@@ -495,7 +529,44 @@ public class WukongService extends Service implements
     }
 
     public static void stop(Context context) {
+        // Mark as user-initiated stop so watchdog does not restart
+        setUserStoppedFlag(context);
+        ServiceWatchdog.cancelWatchdog(context);
         Intent intent = new Intent(context, WukongService.class);
         context.stopService(intent);
+    }
+
+    // ==================== Service Status Flags ====================
+
+    /**
+     * Set the "user stopped" flag in SharedPreferences.
+     * This tells the watchdog NOT to restart the service.
+     * The flag is persisted across process deaths and reboots.
+     */
+    private static void setUserStoppedFlag(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context.getApplicationContext());
+        prefs.edit().putBoolean(PREF_KEY_USER_STOPPED, true).apply();
+        Log.i(TAG, "User stopped flag set — watchdog will not restart");
+    }
+
+    /**
+     * Clear the "user stopped" flag.
+     * Called in onCreate() so that if the service is started again
+     * (by boot, by user, or by any other means), the watchdog
+     * will resume its protection.
+     */
+    private void clearUserStoppedFlag() {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        prefs.edit().putBoolean(PREF_KEY_USER_STOPPED, false).apply();
+        Log.i(TAG, "User stopped flag cleared — watchdog protection active");
+    }
+
+    /**
+     * Check whether the user has explicitly stopped the service.
+     * Used by ServiceWatchdog to decide if it should restart.
+     */
+    public static boolean isUserStopped(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context.getApplicationContext());
+        return prefs.getBoolean(PREF_KEY_USER_STOPPED, false);
     }
 }

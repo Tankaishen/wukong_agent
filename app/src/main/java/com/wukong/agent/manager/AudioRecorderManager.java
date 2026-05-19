@@ -166,8 +166,8 @@ public class AudioRecorderManager {
      * Returns single-channel audio data for wake word detection.
      */
     public void onWakeUpAudioData(byte[] monoData) {
-        // This data goes directly to WakeUpManager
-        // The WakeUpManager will be fed from the service layer
+        // This data goes directly to IWakeUpEngine
+        // The wake engine will be fed from the service layer
     }
 
     public String getCurrentSessionId() {

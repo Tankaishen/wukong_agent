@@ -17,8 +17,11 @@ opensdk文档/
 Android Java 项目开发任务.md
 app/libs/AIKit.aar
 app/libs/opensdk-v1.1.0.aar
+app/src/main/assets/wake_engine.properties
 .codebuddy
 .idea
 .workbuddy
 gradlew
 gradlew.bat
+讯飞样例/
+app/src/main/assets/xunfeiResource/ivw

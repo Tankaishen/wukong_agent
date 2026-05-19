@@ -1,5 +1,10 @@
 package com.wukong.agent.model;
 
+import com.wukong.agent.manager.ConfigManager;
+
+import java.util.Collections;
+import java.util.Map;
+
 public class RobotConfig {
 
     private String wsServerUrl;
@@ -15,6 +20,11 @@ public class RobotConfig {
     private int playingTimeoutMs;
     private String llmModelName;
 
+    // 新增
+    // "aikit" | "picovoice" | "baidu"
+    private String wakeEngineType;
+    private Map<String, String> wakeEngineCredentials; // 当前引擎的凭证
+
     public RobotConfig() {
         // Defaults
         this.wsServerUrl = "wss://localhost:8080/ws";
@@ -29,6 +39,8 @@ public class RobotConfig {
         this.processingTimeoutMs = 10000;
         this.playingTimeoutMs = 60000;
         this.llmModelName = "";
+        this.wakeEngineType = "aikit";
+        this.wakeEngineCredentials = Collections.emptyMap();
     }
 
     // Getters and Setters
@@ -67,4 +79,10 @@ public class RobotConfig {
 
     public String getLlmModelName() { return llmModelName; }
     public void setLlmModelName(String name) { this.llmModelName = name; }
+
+    public String getWakeEngineType() { return wakeEngineType; }
+    public void setWakeEngineType(String type) { this.wakeEngineType = type; }
+
+    public Map<String, String> getWakeEngineCredentials() { return wakeEngineCredentials; }
+    public void setWakeEngineCredentials(Map<String, String> credentials) { this.wakeEngineCredentials = credentials; }
 }
