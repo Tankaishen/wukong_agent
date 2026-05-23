@@ -17,6 +17,6 @@ public class WukongApplication extends Application {
 
         // Schedule watchdog to ensure service stays alive
         WukongService.start(this);
-        ServiceWatchdog.scheduleWatchdog(this);
+//        ServiceWatchdog.scheduleWatchdog(this);
     }
 }

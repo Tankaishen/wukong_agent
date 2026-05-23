@@ -10,31 +10,35 @@ public interface IWakeUpEngine {
         void onWakeUpError(String errorMessage);
     }
 
-    /** 用凭证初始化引擎 */
+    /** Callback for async initialization result */
+    /**
+     * Initialize engine with credentials and async callback.
+     * The callback is invoked on the main thread after init completes (success or failure).
+     */
     void init(Context context, Map<String, String> credentials);
 
-    /** 设置结果回调 */
+    /** Set result callback */
     void setListener(WakeUpListener listener);
 
-    /** 开始监听唤醒词 */
+    /** Start listening for wake words */
     void startListening();
 
-    /** 停止监听 */
+    /** Stop listening */
     void stopListening();
 
-    /** 送入音频数据 */
+    /** Feed audio data */
     void feedAudioData(byte[] pcmData);
 
-    /** 动态更新唤醒词配置 */
+    /** Dynamically update wake word config */
     void updateWakeWordConfig(boolean wukongEnabled, boolean nihaoEnabled,
                               int ncmWukong, int ncmNihao);
 
-    /** 释放资源 */
+    /** Release resources */
     void release();
 
-    /** 引擎是否已初始化 */
+    /** Whether engine has been initialized */
     boolean isInitialized();
 
-    /** 引擎是否正在监听 */
+    /** Whether engine is currently listening */
     boolean isListening();
 }

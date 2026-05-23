@@ -43,7 +43,7 @@ public class BusinessStateMachine {
     }
 
     public synchronized boolean transitionTo(BusinessState newState, String reason) {
-        if (!isValidTransition(currentState, newState)) {
+        if (currentState != BusinessState.IDLE && !isValidTransition(currentState, newState)) {
             Log.w(TAG, "Invalid transition: " + currentState + " -> " + newState);
             return false;
         }
@@ -52,7 +52,7 @@ public class BusinessStateMachine {
         cancelAllTimeouts();
 
         Log.i(TAG, "State transition: " + oldState + " -> " + newState
-                + (reason != null ? " (" + reason + ")" : "No reason"));
+                + (reason != null ? " (" + reason + ")" : " No reason"));
 
         currentState = newState;
         notifyStateChanged(oldState, newState);

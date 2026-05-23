@@ -65,7 +65,18 @@ public class ConfigManager {
         RobotConfig config = new RobotConfig();
 
         // From SharedPreferences (user-adjustable settings)
-        config.setWsServerUrl(prefs.getString("ws_server_url", config.getWsServerUrl()));
+//        config.setWsServerUrl(prefs.getString("ws_server_url", config.getWsServerUrl()));
+        String savedWsUrl = prefs.getString("ws_server_url", null);
+        if (savedWsUrl == null || savedWsUrl.contains("localhost") || savedWsUrl.contains("127.0.0.1")) {
+            // If no saved URL or it's localhost (default from old version), use the new default from RobotConfig
+            String newDefaultUrl = config.getWsServerUrl();
+            config.setWsServerUrl(newDefaultUrl);
+            // Update SharedPreferences so it doesn't keep using the old default
+            prefs.edit().putString("ws_server_url", newDefaultUrl).apply();
+            Log.i(TAG, "Updated ws_server_url in SharedPreferences to new default: " + newDefaultUrl);
+        } else {
+            config.setWsServerUrl(savedWsUrl);
+        }
         config.setWakeWukongEnabled(prefs.getBoolean("wake_word_wukong_enabled", config.isWakeWukongEnabled()));
         config.setWakeNihaoEnabled(prefs.getBoolean("wake_word_nihao_enabled", config.isWakeNihaoEnabled()));
         config.setNcmWukong(prefs.getInt("wake_word_ncm_wukong", config.getNcmWukong()));

@@ -24,7 +24,7 @@ public class ServiceRestartReceiver extends BroadcastReceiver {
                 return;
             }
             Log.i(TAG, "Received restart request, starting WukongService");
-            WukongService.start(context);
+//            WukongService.start(context);
         }
     }
 }

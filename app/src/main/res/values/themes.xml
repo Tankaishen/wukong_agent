@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.WukongAgent" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        Must use Theme.AppCompat (or descendant) because SettingsActivity extends AppCompatActivity.
+        NoActionBar because this app has no Activity UI (headless service); the settings screen
+        uses PreferenceFragmentCompat which renders its own layout.
+    -->
+    <style name="Theme.WukongAgent" parent="Theme.AppCompat.NoActionBar" />
 </resources>

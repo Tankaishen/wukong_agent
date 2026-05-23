@@ -155,13 +155,19 @@ public class AikitWakeEngine implements IWakeUpEngine {
                 keywordFilePath = generateKeywordFile();
 
                 // 4. Initialize AIKit SDK (use BaseLibrary.Params + initEntry as per sample)
-                BaseLibrary.Params params = BaseLibrary.Params.builder()
-                    .appId(appId.trim())
-                    .apiKey(apiKey.trim())
-                    .apiSecret(apiSecret.trim())
-                    .workDir(workDirPath)
-                    .build();
-
+//                BaseLibrary.Params params = BaseLibrary.Params.builder()
+//                    .appId(appId.trim())
+//                    .apiKey(apiKey.trim())
+//                    .apiSecret(apiSecret.trim())
+//                    .workDir(workDirPath)
+//                    .build();
+                AiHelper.Params params = AiHelper.Params.builder()
+                        .appId(appId.trim())
+                        .apiKey(apiKey.trim())
+                        .apiSecret(apiSecret.trim())
+                        .ability("e867a88f2")
+                        .workDir(workDirPath)//SDK工作路径，这里为绝对路径，此处仅为示例
+                        .build();
                 AiHelper.getInst().registerListener(coreListener);
                 AiHelper.getInst().initEntry(context, params);
 

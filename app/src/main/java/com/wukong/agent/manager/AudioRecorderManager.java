@@ -68,6 +68,7 @@ public class AudioRecorderManager {
     private final AudioRecordListener asrRecordListener;
 
     public AudioRecorderManager(Context context) {
+        Log.i(TAG, "AudioRecorderManager construct!");
         this.context = context.getApplicationContext();
 
         // FOR_WAKEUP listener: 16bit mono PCM → forward to wake engine

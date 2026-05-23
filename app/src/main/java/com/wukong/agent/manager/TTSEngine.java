@@ -8,8 +8,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import com.wukong.agent.util.AudioUtils;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -22,6 +24,7 @@ public class TTSEngine {
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
+    private static final long INIT_TIMEOUT_MS = 2000;
 
     public interface TTSListener {
         void onPlaybackStart();
@@ -35,6 +38,8 @@ public class TTSEngine {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean isPlaying = new AtomicBoolean(false);
     private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
+    private final AtomicBoolean isInitialized = new AtomicBoolean(false);
+    private CountDownLatch initLatch;
     private int volume = 80; // 0-100
 
     public TTSEngine() {}
@@ -93,11 +98,15 @@ public class TTSEngine {
 
         isInterrupted.set(false);
         isPlaying.set(true);
+        isInitialized.set(false);
+        initLatch = new CountDownLatch(1);
 
         executor.execute(() -> {
             try {
                 initAudioTrack();
                 audioTrack.play();
+                isInitialized.set(true);
+                initLatch.countDown();
                 handler.post(() -> {
                     if (listener != null) listener.onPlaybackStart();
                 });
@@ -105,6 +114,7 @@ public class TTSEngine {
             } catch (Exception e) {
                 Log.e(TAG, "Failed to start playback", e);
                 isPlaying.set(false);
+                initLatch.countDown(); // Release even on failure to avoid deadlock
                 handler.post(() -> {
                     if (listener != null) listener.onPlaybackError("Start failed: " + e.getMessage());
                 });
@@ -114,11 +124,26 @@ public class TTSEngine {
 
     /**
      * Feed PCM audio data for streaming playback.
+     * Blocks until AudioTrack initialization completes (with timeout).
      * @param pcmBase64 Base64 encoded PCM data
      */
     public void feedAudioData(String pcmBase64) {
-        if (!isPlaying.get() || audioTrack == null) return;
-        if (isInterrupted.get()) return;
+        if (!isPlaying.get() || isInterrupted.get()) return;
+
+        // Wait for AudioTrack initialization to complete before writing data.
+        // This prevents audio data loss when feedAudioData() is called immediately
+        // after startPlayback() — before initAudioTrack() finishes on the executor thread.
+        try {
+            if (initLatch != null) {
+                initLatch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            }
+        } catch (InterruptedException e) {
+            Log.w(TAG, "feedAudioData interrupted while waiting for init");
+            return;
+        }
+
+        // Initialization failed or not yet complete
+        if (!isInitialized.get() || audioTrack == null) return;
 
         byte[] pcmData = AudioUtils.base64ToPcm(pcmBase64);
         executor.execute(() -> {
@@ -161,6 +186,7 @@ public class TTSEngine {
     public void stopPlayback() {
         isInterrupted.set(true);
         isPlaying.set(false);
+        isInitialized.set(false);
 
         executor.execute(() -> {
             if (audioTrack != null) {

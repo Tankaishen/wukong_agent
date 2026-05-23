@@ -63,11 +63,28 @@ public class WukongService extends Service implements
     private static volatile boolean isRunning = false; // 核心双标志机制的第一标志
 
     /**
+     * Static reference to the current service instance for state queries.
+     * Set in onCreate(), cleared in onDestroy(). WeakReference alternative is overkill
+     * since service lifecycle is well-defined (system guarantees onCreate/Destroy pairing).
+     */
+    private static volatile WukongService instance = null;
+
+    /**
      * Check if the service is currently running.
      * Used by ServiceWatchdog to determine if a restart is needed.
      */
     public static boolean isRunning() {
         return isRunning;
+    }
+
+    /**
+     * Get the current business state of the service.
+     * Returns null if the service is not running.
+     * Used by SettingsFragment to display real-time state.
+     */
+    public static BusinessState getCurrentState() {
+        if (instance == null || instance.stateMachine == null) return null;
+        return instance.stateMachine.getCurrentState();
     }
 
     // Core components, managers
@@ -78,6 +95,7 @@ public class WukongService extends Service implements
     private AudioRecorderManager audioRecorderManager;
     private WebSocketManager webSocketManager;
     private TTSEngine ttsEngine;
+    private PromptPlayer promptPlayer;
     private RobotActionManager robotActionManager;
 
     // Data
@@ -97,6 +115,7 @@ public class WukongService extends Service implements
         Log.i(TAG, "WukongService onCreate");
 
         isRunning = true;
+        instance = this;
         clearUserStoppedFlag();
 
         initNotificationChannel();
@@ -122,6 +141,7 @@ public class WukongService extends Service implements
     public void onDestroy() {
         Log.i(TAG, "WukongService onDestroy");
         isRunning = false;
+        instance = null;
         cleanup();
         super.onDestroy();
 
@@ -170,6 +190,8 @@ public class WukongService extends Service implements
         ttsEngine = new TTSEngine();
         ttsEngine.setListener(this);
 
+        promptPlayer = new PromptPlayer(this);
+
         robotActionManager = new RobotActionManager(this);
 
         // Coordinator
@@ -187,6 +209,7 @@ public class WukongService extends Service implements
     }
 
     private void startStateMachine() {
+        Log.d(TAG, "Start State Machine!");
         stateMachine.transitionTo(BusinessState.IDLE);
         // IDLE state's onStateChanged callback will start wakeup listening + wake engine
     }
@@ -213,12 +236,12 @@ public class WukongService extends Service implements
                 // Wake word detected — stop wakeup listening, prepare for ASR
                 audioRecorderManager.stopWakeupListening();
                 wakeUpEngine.stopListening();
-                // Transition to RECORDING after a short delay for recorder to stabilize
-                handler.postDelayed(() -> {
+                // Play wake-up prompt (beep_hi), then transition to RECORDING after it finishes
+                promptPlayer.play(PromptPlayer.Prompt.WAKEUP, () -> {
                     if (stateMachine.getCurrentState() == BusinessState.WAKEUP) {
-                        stateMachine.transitionTo(BusinessState.RECORDING);
+                        stateMachine.transitionTo(BusinessState.RECORDING, "wakeup_prompt_done");
                     }
-                }, 200);
+                });
                 break;
 
             case RECORDING:
@@ -227,8 +250,9 @@ public class WukongService extends Service implements
                 break;
 
             case PROCESSING:
-                // Stop ASR recording, send final marker to WebSocket
+                // Stop ASR recording, play record-end prompt, send final marker to WebSocket
                 audioRecorderManager.stopAsrRecording();
+                promptPlayer.play(PromptPlayer.Prompt.RECORD_END, null);
                 String sessionId = audioRecorderManager.getCurrentSessionId();
                 if (sessionId != null) {
                     webSocketManager.sendChatMessage(sessionId, "", true);
@@ -261,8 +285,8 @@ public class WukongService extends Service implements
 
         if (current == BusinessState.IDLE) {
             // Normal wake up from idle
+            // Wake-up prompt (beep_hi) is played in onStateChanged(WAKEUP)
             stateMachine.transitionTo(BusinessState.WAKEUP, "wake: " + keyword);
-            // 此处应加入"我在"的语音播放。
         } else if (current == BusinessState.PLAYING) {
             // Interrupt: stop TTS and start new recording
             ttsEngine.stopPlayback();
@@ -351,10 +375,10 @@ public class WukongService extends Service implements
             ttsEngine.feedAudioData(message.getAudioBase64());
         }
 
-        // Execute action if specified
-        if (message.getAction() != null && !message.getAction().isEmpty()) {
-            robotActionManager.playAction(message.getAction());
-        }
+        // Execute action if specified, 后续开发
+//        if (message.getAction() != null && !message.getAction().isEmpty()) {
+//            robotActionManager.playAction(message.getAction());
+//        }
 
         // Save text to chat history
         if (message.getText() != null && !message.getText().isEmpty()) {
@@ -504,6 +528,7 @@ public class WukongService extends Service implements
         if (audioRecorderManager != null) audioRecorderManager.release();
         if (webSocketManager != null) webSocketManager.release();
         if (ttsEngine != null) ttsEngine.release();
+        if (promptPlayer != null) promptPlayer.release();
         if (robotActionManager != null) robotActionManager.release();
         if (stateMachine != null) stateMachine.cleanup();
         if (configManager != null) {

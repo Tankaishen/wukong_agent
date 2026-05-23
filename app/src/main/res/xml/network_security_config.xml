@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network Security Config — allows cleartext (ws://) WebSocket traffic.
+    Android 9+ blocks cleartext by default; this config permits it for
+    local/development WebSocket servers. For production, switch to wss://
+    and remove the cleartextTrafficPermitted override.
+-->
+<network-security-config>
+    <!-- Allow cleartext for all domains (dev/testing only) -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

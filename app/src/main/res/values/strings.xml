@@ -33,13 +33,19 @@
     <string name="pref_processing_timeout_title">Processing Timeout (ms)</string>
     <string name="pref_playing_timeout_title">Playing Timeout (ms)</string>
     <string name="pref_category_advanced">Advanced</string>
+    <string name="pref_status_title">Current State</string>
+    <string name="pref_status_summary">Stopped</string>
     <string name="pref_service_control_title">Service Control</string>
     <string name="pref_service_start">Start Service</string>
+    <string name="pref_service_start_summary">Start WukongService (foreground service + wake word listening)</string>
     <string name="pref_service_stop">Stop Service</string>
+    <string name="pref_service_stop_summary">Stop WukongService and cancel watchdog restart</string>
+    <string name="pref_service_status_running">Running</string>
+    <string name="pref_service_status_stopped">Stopped</string>
+    <string name="pref_service_start_toast">WukongService started</string>
+    <string name="pref_service_stop_toast">WukongService stopped</string>
     <string name="pref_llm_model_title">LLM Model</string>
     <string name="pref_llm_model_summary">Select the language model (future feature)</string>
-    <string name="pref_status_title">Current State</string>
-    <string name="pref_status_summary">IDLE</string>
 
     <!-- State labels -->
     <string name="state_idle">Idle</string>

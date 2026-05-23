@@ -58,6 +58,7 @@ public class WebSocketManager {
 
     public void setServerUrl(String url) {
         this.serverUrl = url;
+        connect();
     }
 
     public void setHeartbeatIntervalMs(long ms) {

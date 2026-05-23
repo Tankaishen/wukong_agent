@@ -3,7 +3,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <!-- Service Status -->
+    <!-- Service Status & Control -->
     <PreferenceCategory
         app:title="@string/pref_status_title"
         app:iconSpaceReserved="false">
@@ -12,6 +12,16 @@
             app:title="@string/pref_status_title"
             app:summary="@string/pref_status_summary"
             app:selectable="false" />
+        <Preference
+            app:key="@string/pref_key_service_start"
+            app:title="@string/pref_service_start"
+            app:summary="@string/pref_service_start_summary"
+            app:iconSpaceReserved="false" />
+        <Preference
+            app:key="@string/pref_key_service_stop"
+            app:title="@string/pref_service_stop"
+            app:summary="@string/pref_service_stop_summary"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
     <!-- Connection -->

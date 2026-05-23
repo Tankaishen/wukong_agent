@@ -1,5 +1,7 @@
 package com.wukong.agent.model;
 
+import android.util.Log;
+
 import com.wukong.agent.manager.ConfigManager;
 
 import java.util.Collections;
@@ -7,6 +9,7 @@ import java.util.Map;
 
 public class RobotConfig {
 
+    private static final String TAG = "RobotConfig";
     private String wsServerUrl;
     private boolean wakeWukongEnabled;
     private boolean wakeNihaoEnabled;
@@ -27,7 +30,8 @@ public class RobotConfig {
 
     public RobotConfig() {
         // Defaults
-        this.wsServerUrl = "wss://localhost:8080/ws";
+//        this.wsServerUrl = "wss://localhost:8080/ws";
+        this.wsServerUrl = "ws://222.201.189.87:8080";
         this.wakeWukongEnabled = true;
         this.wakeNihaoEnabled = true;
         this.ncmWukong = 1200;
@@ -69,7 +73,7 @@ public class RobotConfig {
     public void setVadEnergyThreshold(int threshold) { this.vadEnergyThreshold = threshold; }
 
     public int getRecordingTimeoutMs() { return recordingTimeoutMs; }
-    public void setRecordingTimeoutMs(int ms) { this.recordingTimeoutMs = ms; }
+    public void setRecordingTimeoutMs(int ms) { this.recordingTimeoutMs = ms; Log.d(TAG, "RecordingTimeoutMs set:" + ms);}
 
     public int getProcessingTimeoutMs() { return processingTimeoutMs; }
     public void setProcessingTimeoutMs(int ms) { this.processingTimeoutMs = ms; }

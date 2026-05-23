@@ -23,7 +23,10 @@
 
     <!-- Advanced -->
     <string name="pref_key_llm_model" translatable="false">llm_model_name</string>
+    <!-- Service Control -->
     <string name="pref_key_service_status" translatable="false">service_status</string>
+    <string name="pref_key_service_start" translatable="false">service_start</string>
+    <string name="pref_key_service_stop" translatable="false">service_stop</string>
 
     <!-- Default values -->
     <string name="pref_default_ws_url" translatable="false">wss://localhost:8080/ws</string>
