@@ -21,8 +21,8 @@ public class VADDetector {
     private VADListener listener;
 
     public VADDetector(int energyThreshold, long silenceDurationMs) {
-        this.energyThreshold = energyThreshold;
-        this.silenceDurationMs = silenceDurationMs;
+        this.energyThreshold = energyThreshold; // 目前为500
+        this.silenceDurationMs = silenceDurationMs; // 目前为5000,在RobotConfig.java中设置
     }
 
     public void setListener(VADListener listener) {

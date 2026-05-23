@@ -89,6 +89,7 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
     private boolean isInitialized = false;
     private final AtomicBoolean isListening = new AtomicBoolean(false);
+    private final AtomicBoolean firstFrameSent = new AtomicBoolean(false);
     private AiHandle aiHandle;
     private String workDirPath;   // absolute path of workDir
     private String keywordFilePath; // absolute path of keyword.txt on disk
@@ -224,22 +225,22 @@ public class AikitWakeEngine implements IWakeUpEngine {
                 Log.i(TAG, "loadData success");
 
                 // Step 3: Specify data set
-                int[] indexes = {0};
-                ret = AiHelper.getInst().specifyDataSet(ABILITY_ID, "key_word", indexes);
-                if (ret != 0) {
-                    Log.e(TAG, "specifyDataSet failed: " + ret);
-                    notifyError("IVW specifyDataSet failed: " + ret);
-                    return;
-                }
-                Log.i(TAG, "specifyDataSet success");
+//                int[] indexes = {0};
+//                ret = AiHelper.getInst().specifyDataSet(ABILITY_ID, "key_word", indexes);
+//                if (ret != 0) {
+//                    Log.e(TAG, "specifyDataSet failed: " + ret);
+//                    notifyError("IVW specifyDataSet failed: " + ret);
+//                    return;
+//                }
+//                Log.i(TAG, "specifyDataSet success");
 
                 // Step 4: Start engine session with parameters
                 AiRequest.Builder paramBuilder = AiRequest.builder();
                 // nCM threshold format: "0 0:threshold" for first keyword
                 // Multiple keywords: "0 0:threshold1 1:threshold2"
 //                String ncmParam = buildNcmThresholdParam();
+                String ncmParam = "";
 //                paramBuilder.param("wdec_param_nCmThreshold", ncmParam);
-//                paramBuilder.param("gramLoad", true);
 
                 aiHandle = AiHelper.getInst().start(ABILITY_ID, paramBuilder.build(), null);
                 if (aiHandle.getCode() != 0) {
@@ -249,6 +250,7 @@ public class AikitWakeEngine implements IWakeUpEngine {
                 }
 
                 isListening.set(true);
+                firstFrameSent.set(false); // Reset for this listening session
                 Log.i(TAG, "Started listening for wake words (nCmThreshold=" + ncmParam + ")");
 
             } catch (Exception e) {
@@ -265,6 +267,22 @@ public class AikitWakeEngine implements IWakeUpEngine {
         executor.execute(() -> {
             try {
                 if (aiHandle != null) {
+                    // Step 1: Send END frame to signal audio stream completion
+                    AiAudio endAudio = AiAudio.get("wav")
+                        .data(new byte[0])
+                        .status(AiStatus.END)
+                        .valid();
+
+                    AiRequest.Builder endBuilder = AiRequest.builder();
+                    endBuilder.payload(endAudio);
+                    int writeRet = AiHelper.getInst().write(endBuilder.build(), aiHandle);
+                    if (writeRet != 0) {
+                        Log.w(TAG, "END frame write() returned: " + writeRet);
+                    } else {
+                        Log.d(TAG, "END frame sent successfully");
+                    }
+
+                    // Step 2: End the engine session
                     int ret = AiHelper.getInst().end(aiHandle);
                     if (ret == 0) {
                         Log.i(TAG, "Stopped listening (end success)");
@@ -274,8 +292,11 @@ public class AikitWakeEngine implements IWakeUpEngine {
                     aiHandle = null;
                 }
                 isListening.set(false);
+                firstFrameSent.set(false); // Reset for next startListening cycle
             } catch (Exception e) {
                 Log.e(TAG, "Failed to stop listening", e);
+                isListening.set(false);
+                firstFrameSent.set(false);
             }
         });
     }
@@ -283,39 +304,17 @@ public class AikitWakeEngine implements IWakeUpEngine {
     @Override
     public void feedAudioData(byte[] pcmData) {
         if (!isListening.get() || aiHandle == null) {
-            Log.e(TAG, "Aikit is not listening or aiHandle is not initialized, can't feed audio data.");
+            Log.w(TAG, "Cannot feed audio: not listening or aiHandle is null");
             return;
         }
 
         executor.execute(() -> {
             try {
-                AiAudio aiAudio = AiAudio.get("wav")
-                    .data(pcmData)
-                    .status(AiStatus.CONTINUE)
-                    .valid();
+                // First frame must be marked BEGIN, subsequent frames use CONTINUE
+                AiStatus status = firstFrameSent.compareAndSet(false, true)
+                        ? AiStatus.BEGIN
+                        : AiStatus.CONTINUE;
 
-                AiRequest.Builder dataBuilder = AiRequest.builder();
-                dataBuilder.payload(aiAudio);
-
-                int ret = AiHelper.getInst().write(dataBuilder.build(), aiHandle);
-                if (ret != 0) {
-                    Log.w(TAG, "write() returned: " + ret);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error feeding audio data", e);
-            }
-        });
-    }
-
-    /**
-     * Feed audio data with explicit status (BEGIN/CONTINUE/END).
-     * Used when the caller needs to control the audio framing.
-     */
-    public void feedAudioData(byte[] pcmData, AiStatus status) {
-        if (!isListening.get() || aiHandle == null) return;
-
-        executor.execute(() -> {
-            try {
                 AiAudio aiAudio = AiAudio.get("wav")
                     .data(pcmData)
                     .status(status)
@@ -329,7 +328,7 @@ public class AikitWakeEngine implements IWakeUpEngine {
                     Log.w(TAG, "write() returned: " + ret);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error feeding audio data with status", e);
+                Log.e(TAG, "Error feeding audio data", e);
             }
         });
     }

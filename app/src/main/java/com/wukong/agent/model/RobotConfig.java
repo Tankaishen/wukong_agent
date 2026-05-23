@@ -33,7 +33,7 @@ public class RobotConfig {
         this.ncmWukong = 1200;
         this.ncmNihao = 1450;
         this.ttsVolume = 80;
-        this.vadSilenceDurationMs = 1500;
+        this.vadSilenceDurationMs = 5000;
         this.vadEnergyThreshold = 500;
         this.recordingTimeoutMs = 30000;
         this.processingTimeoutMs = 10000;
