@@ -25,6 +25,6 @@ gradlew
 gradlew.bat
 讯飞样例/
 机器人接口样例/
-app/src/main/assets/xunfeiResource/ivw
+app/src/main/assets/aikit_resources/
 wukong_robot服务端/
 Test_Server/

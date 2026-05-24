@@ -10,13 +10,17 @@ public interface IWakeUpEngine {
         void onWakeUpError(String errorMessage);
     }
 
+    interface InitCallback {
+        void onInitComplete();
+    }
+
     /** Callback for async initialization result */
     /**
      * Initialize engine with credentials and async callback.
      * The callback is invoked on the main thread after init completes (success or failure).
      */
     void init(Context context, Map<String, String> credentials);
-
+//    void init(Context context, Map<String, String> credentials, InitCallback callback);
     /** Set result callback */
     void setListener(WakeUpListener listener);
 

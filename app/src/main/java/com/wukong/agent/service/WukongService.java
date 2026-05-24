@@ -19,7 +19,6 @@ import android.widget.RemoteViews;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
-import androidx.lifecycle.Observer;
 import androidx.preference.PreferenceManager;
 
 import com.ubtrobot.api.WkSdk;
@@ -40,10 +39,16 @@ import com.wukong.agent.statemachine.StateChangeListener;
 import com.wukong.agent.util.AudioUtils;
 import com.wukong.agent.watchdog.ServiceWatchdog;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class WukongService extends Service implements
         StateChangeListener,
         IWakeUpEngine.WakeUpListener,
+        IWakeUpEngine.InitCallback,
         AudioRecorderManager.AudioListener,
+        AudioRecorderManager.InitCallback,
         WebSocketManager.WebSocketEventListener,
         TTSEngine.TTSListener {
 
@@ -109,6 +114,10 @@ public class WukongService extends Service implements
     private NotificationManager notificationManager;
     private RemoteViews notificationLayout;
 
+    // 初始化条件变量。
+    private CountDownLatch initLatch;
+    private static final long INIT_TIMEOUT_MS = 2000;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -122,6 +131,14 @@ public class WukongService extends Service implements
         startForeground(NOTIFICATION_ID, buildNotification(BusinessState.IDLE));
 
         initComponents();
+        try {
+            if (initLatch != null) {
+                initLatch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            }
+        } catch (InterruptedException e) {
+            Log.w(TAG, "feedAudioData interrupted while waiting for init");
+            return;
+        }
         startStateMachine();
     }
 
@@ -154,6 +171,7 @@ public class WukongService extends Service implements
     // ==================== Initialization ====================
 
     private void initComponents() {
+        initLatch = new CountDownLatch(2);
         // Database
         database = WukongDatabase.getInstance(this);
         chatHistoryRepository = new ChatHistoryRepository(database.chatHistoryDao());
@@ -178,6 +196,7 @@ public class WukongService extends Service implements
 
         audioRecorderManager = new AudioRecorderManager(this);
         audioRecorderManager.setAsrListener(this);
+        audioRecorderManager.setInitCallback(this);
         audioRecorderManager.setWakeUpEngine(wakeUpEngine);
         audioRecorderManager.setVadParameters(
             configManager.getVadEnergyThreshold(),
@@ -223,10 +242,11 @@ public class WukongService extends Service implements
 
         switch (newState) {
             case IDLE:
-                // Stop ASR recording if it was active
-                audioRecorderManager.stopAsrRecording();
                 // Stop wake engine listening from previous cycle
                 wakeUpEngine.stopListening();
+                // Stop ASR recording if it was active
+                audioRecorderManager.stopAsrRecording();
+
                 // Start wake word listening: register FOR_WAKEUP listener + start wake engine
                 audioRecorderManager.startWakeupListening();
                 wakeUpEngine.startListening();
@@ -393,6 +413,7 @@ public class WukongService extends Service implements
         }
 
         if (message.isFinal()) {
+            Log.d(TAG,"Receive message.isFinal!");
             ttsEngine.finishFeed();
         }
     }
@@ -592,5 +613,10 @@ public class WukongService extends Service implements
     public static boolean isUserStopped(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context.getApplicationContext());
         return prefs.getBoolean(PREF_KEY_USER_STOPPED, false);
+    }
+
+    @Override
+    public void onInitComplete() {
+        initLatch.countDown();
     }
 }

@@ -85,21 +85,21 @@
         </receiver>
 
         <!-- Service Restart Receiver -->
-<!--        <receiver-->
-<!--            android:name=".watchdog.ServiceRestartReceiver"-->
-<!--            android:enabled="true"-->
-<!--            android:exported="false">-->
-<!--            <intent-filter>-->
-<!--                &lt;!&ndash; 匹配我们自定义的广播动作 &ndash;&gt;-->
-<!--                <action android:name="com.wukong.agent.RESTART_SERVICE" />-->
-<!--            </intent-filter>-->
-<!--        </receiver>-->
+        <receiver
+            android:name=".watchdog.ServiceRestartReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <!-- 匹配我们自定义的广播动作 -->
+                <action android:name="com.wukong.agent.RESTART_SERVICE" />
+            </intent-filter>
+        </receiver>
 
         <!-- Service Watchdog (JobService) -->
-<!--        <service-->
-<!--            android:name=".watchdog.ServiceWatchdog"-->
-<!--            android:permission="android.permission.BIND_JOB_SERVICE"-->
-<!--            android:exported="true" />-->
+        <service
+            android:name=".watchdog.ServiceWatchdog"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
 
     </application>
 

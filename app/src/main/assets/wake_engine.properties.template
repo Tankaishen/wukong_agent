@@ -5,7 +5,7 @@ wake.engine=aikit
 aikit.appId=
 aikit.apiKey=
 aikit.apiSecret=
-aikit.workDir=aikit_workspace
+aikit.workDir=aikit_resources
 
 # === Picovoice ===
 picovoice.accessKey=

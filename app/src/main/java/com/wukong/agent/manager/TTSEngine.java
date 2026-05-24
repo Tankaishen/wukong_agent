@@ -41,7 +41,6 @@ public class TTSEngine {
     private final AtomicBoolean isInitialized = new AtomicBoolean(false);
     private CountDownLatch initLatch;
     private int volume = 80; // 0-100
-
     public TTSEngine() {}
 
     public void setListener(TTSListener listener) {
@@ -96,6 +95,8 @@ public class TTSEngine {
             return;
         }
 
+        Log.d(TAG, "Starting Playback");
+
         isInterrupted.set(false);
         isPlaying.set(true);
         isInitialized.set(false);
@@ -136,6 +137,7 @@ public class TTSEngine {
         try {
             if (initLatch != null) {
                 initLatch.await(INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                Log.d(TAG,"Waiting TTS playback started");
             }
         } catch (InterruptedException e) {
             Log.w(TAG, "feedAudioData interrupted while waiting for init");
@@ -148,7 +150,7 @@ public class TTSEngine {
         byte[] pcmData = AudioUtils.base64ToPcm(pcmBase64);
         executor.execute(() -> {
             if (!isInterrupted.get() && audioTrack != null) {
-                audioTrack.write(pcmData, 0, pcmData.length);
+                int written = audioTrack.write(pcmData, 0, pcmData.length);
             }
         });
     }
@@ -159,12 +161,14 @@ public class TTSEngine {
      */
     public void finishFeed() {
         executor.execute(() -> {
+            Log.d(TAG, "finishFeed call");
             if (audioTrack != null && !isInterrupted.get()) {
                 try {
-                    // Wait for AudioTrack to finish playing buffered data
-                    while (audioTrack.getPlaybackHeadPosition() < audioTrack.getBufferSizeInFrames()
-                            && isPlaying.get() && !isInterrupted.get()) {
-                        Thread.sleep(50);
+                    // Wait for AudioTrack to finish playing all written data
+                    while (audioTrack.getPlaybackHeadPosition() < audioTrack.getBufferSizeInFrames()) {
+                        Log.d(TAG, "Func:finishFeed, head:" + audioTrack.getPlaybackHeadPosition());
+                        Thread.sleep(100);
+                        break;
                     }
 
                     // Short delay to ensure final samples are played
@@ -172,7 +176,7 @@ public class TTSEngine {
                 } catch (InterruptedException e) {
                     // Interrupted, that's fine
                 }
-
+                Log.d(TAG, "Func:finishFeed, isInterrupted is: " + isInterrupted.get());
                 if (!isInterrupted.get()) {
                     completePlayback();
                 }

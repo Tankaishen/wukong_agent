@@ -5,12 +5,13 @@ import android.content.res.AssetManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.util.List;
@@ -29,7 +30,7 @@ import com.iflytek.aikit.core.AiStatus;
 import com.iflytek.aikit.core.BaseLibrary;
 import com.iflytek.aikit.core.CoreListener;
 import com.iflytek.aikit.core.ErrType;
-import com.iflytek.aikit.core.LogLvl;
+import com.wukong.agent.customException.CustomException;
 import com.wukong.agent.interfaces.IWakeUpEngine;
 
 /**
@@ -60,20 +61,21 @@ public class AikitWakeEngine implements IWakeUpEngine {
     private static final String ABILITY_ID = "e867a88f2";
 
     /** Assets path for IVW model files */
-    private static final String IVW_ASSET_DIR = "xunfeiResource/ivw";
+    private static final String IVW_ASSET_DIR = "aikit_resources";
 
     /** Assets path for keyword file template */
-    private static final String KEYWORD_ASSET_PATH = "aikit_resources/keyword.txt";
+    private static final String KEYWORD_ASSET_PATH = "aikit_resources/keyword1.txt";
 
     /** Subdirectory under workDir for IVW resources */
-    private static final String IVW_SUBDIR = "ivw";
+//    private static final String IVW_SUBDIR = "ivw";
 
     // Credential keys expected in the credentials Map
     private static final String KEY_APP_ID = "appId";
     private static final String KEY_API_KEY = "apiKey";
     private static final String KEY_API_SECRET = "apiSecret";
-    private static final String KEY_WORK_DIR = "workDir";
-    private static final String DEFAULT_WORK_DIR = "aikit_workspace";
+    private static final String KEY_WORK_DIR = "workDir"; // 不能改，这是一个key值，不是直接拿来用的
+    private static final String DEFAULT_WORK_DIR = "aikit_resources";
+    private String RES_DIR;
 
     // Audio constants (16bit 16kHz mono)
     private static final int SAMPLE_RATE = 16000;
@@ -141,33 +143,52 @@ public class AikitWakeEngine implements IWakeUpEngine {
         executor.execute(() -> {
             try {
                 // 1. Prepare workDir
-                File workDir = new File(context.getFilesDir(), workDirName);
-                if (!workDir.exists()) {
-                    workDir.mkdirs();
+                File baseWorkDir = new File(context.getFilesDir(), workDirName);
+//                File ivwWorkDir = new File(baseWorkDir, "ivw"); // SDK实际需要的目录
+                Log.d(TAG, "基础工作目录: " + baseWorkDir.getAbsolutePath());
+//                Log.d(TAG, "IVW工作目录: " + ivwWorkDir.getAbsolutePath());
+                // 创建所有必要的目录（包括子目录）
+                if (!baseWorkDir.exists()) {
+                    boolean dirsCreated = baseWorkDir.mkdirs(); // 创建多级目录
+                    if (!dirsCreated) {
+                        String msg = "无法创建IVW工作目录: " + baseWorkDir.getAbsolutePath();
+                        Log.e(TAG, msg);
+                        notifyError(msg);
+                        return;
+                    }
+                    Log.d(TAG, "成功创建IVW工作目录");
                 }
-                workDirPath = workDir.getAbsolutePath();
-                Log.i(TAG, "Work directory: " + workDirPath);
+                // 检查目录是否可写（重要）
+                if (!baseWorkDir.canWrite()) {
+                    String msg = "IVW工作目录不可写: " + baseWorkDir.getAbsolutePath();
+                    Log.e(TAG, msg);
+                    notifyError(msg);
+                    return;
+                }
+                workDirPath = baseWorkDir.getAbsolutePath();
+                Log.i(TAG, "Aikit work directory: " + workDirPath);
 
-                // 2. Copy IVW model resources from assets to workDir/ivw/
-                copyIvwResources(workDirPath);
+                // 2. Copy IVW model resources from assets to workDir/
+//                copyIvwResources(workDirPath);
 
-                // 3. Generate keyword file in workDir/ivw/
-                keywordFilePath = generateKeywordFile();
+                // 3. Generate keyword file in workDir/
+//                keywordFilePath = generateKeywordFile();
+//                Log.d(TAG,"keywordFilePath: " + keywordFilePath);
 
                 // 4. Initialize AIKit SDK (use BaseLibrary.Params + initEntry as per sample)
-//                BaseLibrary.Params params = BaseLibrary.Params.builder()
-//                    .appId(appId.trim())
-//                    .apiKey(apiKey.trim())
-//                    .apiSecret(apiSecret.trim())
-//                    .workDir(workDirPath)
-//                    .build();
-                AiHelper.Params params = AiHelper.Params.builder()
-                        .appId(appId.trim())
-                        .apiKey(apiKey.trim())
-                        .apiSecret(apiSecret.trim())
-                        .ability("e867a88f2")
-                        .workDir(workDirPath)//SDK工作路径，这里为绝对路径，此处仅为示例
-                        .build();
+                BaseLibrary.Params params = BaseLibrary.Params.builder()
+                    .appId(appId.trim())
+                    .apiKey(apiKey.trim())
+                    .apiSecret(apiSecret.trim())
+                    .workDir(workDirPath)
+                    .build();
+//                AiHelper.Params params = AiHelper.Params.builder()
+//                        .appId(appId.trim())
+//                        .apiKey(apiKey.trim())
+//                        .apiSecret(apiSecret.trim())
+//                        .ability("e867a88f2")
+//                        .workDir(workDirPath)//SDK工作路径，这里为绝对路径，此处仅为示例
+//                        .build();
                 AiHelper.getInst().registerListener(coreListener);
                 AiHelper.getInst().initEntry(context, params);
 
@@ -231,33 +252,36 @@ public class AikitWakeEngine implements IWakeUpEngine {
                 Log.i(TAG, "loadData success");
 
                 // Step 3: Specify data set
-//                int[] indexes = {0};
-//                ret = AiHelper.getInst().specifyDataSet(ABILITY_ID, "key_word", indexes);
-//                if (ret != 0) {
-//                    Log.e(TAG, "specifyDataSet failed: " + ret);
-//                    notifyError("IVW specifyDataSet failed: " + ret);
-//                    return;
-//                }
-//                Log.i(TAG, "specifyDataSet success");
+                int[] indexes = {0};
+                ret = AiHelper.getInst().specifyDataSet(ABILITY_ID, "key_word", indexes);
+                if (ret != 0) {
+                    Log.e(TAG, "specifyDataSet failed: " + ret);
+                    notifyError("IVW specifyDataSet failed: " + ret);
+                    return;
+                }
+                Log.i(TAG, "specifyDataSet success");
 
                 // Step 4: Start engine session with parameters
                 AiRequest.Builder paramBuilder = AiRequest.builder();
                 // nCM threshold format: "0 0:threshold" for first keyword
                 // Multiple keywords: "0 0:threshold1 1:threshold2"
 //                String ncmParam = buildNcmThresholdParam();
-                String ncmParam = "";
+//                String ncmParam = "";
 //                paramBuilder.param("wdec_param_nCmThreshold", ncmParam);
+                paramBuilder.param("wdec_param_nCmThreshold", "0 0:800");
+                paramBuilder.param("gramLoad", true);
 
                 aiHandle = AiHelper.getInst().start(ABILITY_ID, paramBuilder.build(), null);
                 if (aiHandle.getCode() != 0) {
-                    Log.e(TAG, "IVW start failed: " + aiHandle.getCode());
+                    Log.e(TAG,"IVW start failed: " + aiHandle.getCode());
                     notifyError("IVW start failed: " + aiHandle.getCode());
                     return;
                 }
 
                 isListening.set(true);
                 firstFrameSent.set(false); // Reset for this listening session
-                Log.i(TAG, "Started listening for wake words (nCmThreshold=" + ncmParam + ")");
+//                Log.i(TAG, "Started listening for wake words (nCmThreshold=" + ncmParam + ")");
+                Log.i(TAG, "Started listening for wake words");
 
             } catch (Exception e) {
                 Log.e(TAG, "Failed to start listening", e);
@@ -266,45 +290,79 @@ public class AikitWakeEngine implements IWakeUpEngine {
         });
     }
 
+//    @Override
+//    public void stopListening() {
+//        if (!isListening.get()) return;
+//
+//        executor.execute(() -> {
+//            try {
+//                if (aiHandle != null) {
+//                    // Step 1: Send END frame to signal audio stream completion
+//                    AiAudio endAudio = AiAudio.get("wav")
+//                        .data(new byte[0])
+//                        .status(AiStatus.END)
+//                        .valid();
+//
+//                    AiRequest.Builder endBuilder = AiRequest.builder();
+//                    endBuilder.payload(endAudio);
+//                    int writeRet = AiHelper.getInst().write(endBuilder.build(), aiHandle);
+//                    if (writeRet != 0) {
+//                        Log.w(TAG, "END frame write() returned: " + writeRet);
+//                    } else {
+//                        Log.d(TAG, "END frame sent successfully");
+//                    }
+//
+//                    // Step 2: End the engine session
+//                    int ret = AiHelper.getInst().end(aiHandle);
+//                    if (ret == 0) {
+//                        Log.i(TAG, "Stopped listening (end success)");
+//                    } else {
+//                        Log.w(TAG, "end() returned: " + ret);
+//                    }
+//                    aiHandle = null;
+//                }
+//                isListening.set(false);
+//                firstFrameSent.set(false); // Reset for next startListening cycle
+//            } catch (Exception e) {
+//                Log.e(TAG, "Failed to stop listening", e);
+//                isListening.set(false);
+//                firstFrameSent.set(false);
+//            }
+//        });
+//    }
+
     @Override
     public void stopListening() {
-        if (!isListening.get()) return;
+        if (!isListening.compareAndSet(true, false)) return;
+        try {
+            if (aiHandle != null) {
+                // Step 1: Send END frame to signal audio stream completion
+                AiAudio endAudio = AiAudio.get("wav").data(new byte[0]).status(AiStatus.END).valid();
 
-        executor.execute(() -> {
-            try {
-                if (aiHandle != null) {
-                    // Step 1: Send END frame to signal audio stream completion
-                    AiAudio endAudio = AiAudio.get("wav")
-                        .data(new byte[0])
-                        .status(AiStatus.END)
-                        .valid();
-
-                    AiRequest.Builder endBuilder = AiRequest.builder();
-                    endBuilder.payload(endAudio);
-                    int writeRet = AiHelper.getInst().write(endBuilder.build(), aiHandle);
-                    if (writeRet != 0) {
-                        Log.w(TAG, "END frame write() returned: " + writeRet);
-                    } else {
-                        Log.d(TAG, "END frame sent successfully");
-                    }
-
-                    // Step 2: End the engine session
-                    int ret = AiHelper.getInst().end(aiHandle);
-                    if (ret == 0) {
-                        Log.i(TAG, "Stopped listening (end success)");
-                    } else {
-                        Log.w(TAG, "end() returned: " + ret);
-                    }
-                    aiHandle = null;
+                AiRequest.Builder endBuilder = AiRequest.builder();
+                endBuilder.payload(endAudio);
+                int writeRet = AiHelper.getInst().write(endBuilder.build(), aiHandle);
+                if (writeRet != 0) {
+                    Log.w(TAG, "END frame write() returned: " + writeRet + " (session may already be closed)");
+                } else {
+                    Log.d(TAG, "END frame sent successfully");
                 }
-                isListening.set(false);
-                firstFrameSent.set(false); // Reset for next startListening cycle
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to stop listening", e);
-                isListening.set(false);
-                firstFrameSent.set(false);
+                // Step 2: End the engine session
+                int ret = AiHelper.getInst().end(aiHandle);
+                if (ret == 0) {
+                    Log.i(TAG, "Stopped listening (end success)");
+                } else {
+                    Log.w(TAG, "end() returned: " + ret);
+                }
+                aiHandle = null;
             }
-        });
+//            isListening.set(false);
+            firstFrameSent.set(false); // Reset for next startListening cycle
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to stop listening", e);
+            isListening.set(false);
+            firstFrameSent.set(false);
+        }
     }
 
     @Override
@@ -377,8 +435,15 @@ public class AikitWakeEngine implements IWakeUpEngine {
      */
     private boolean keyword2File() {
         try {
+            try{
+                keywordFilePath = generateKeywordFile();
+                Log.d(TAG,"Func: keyword2File, keywordFilePath: " + keywordFilePath);
+            }  catch (CustomException e){
+                e.printStackTrace();
+                return false;
+            }
             File keywordFile = new File(keywordFilePath);
-
+            Log.d(TAG, "keyword2File: 准备创建文件 " + keywordFile.getAbsolutePath());
             // Skip rewrite if file already exists and config hasn't changed
             if (keywordFile.exists() && !keywordDirty) {
                 Log.i(TAG, "Keyword file already exists and config unchanged, skip rewrite");
@@ -395,19 +460,37 @@ public class AikitWakeEngine implements IWakeUpEngine {
                 binFile.delete();
             }
 
-            keywordFile.createNewFile();
+            boolean fileCreated = keywordFile.createNewFile();
+            if (!fileCreated) {
+                Log.e(TAG, "keyword2File: 创建keyword.txt失败");
+                return false;
+            }
 
             OutputStreamWriter writer = new OutputStreamWriter(
                 new FileOutputStream(keywordFile), "UTF-8");
             if (wukongEnabled) {
-                writer.write("悟空悟空;nCM:"+ncmWukong+";");
+                writer.write("悟空悟空;");
                 writer.write("\n");
+                Log.d(TAG, "keyword2File: 写入唤醒词: 悟空悟空");
             }
             if (nihaoEnabled) {
-                writer.write("你好悟空;nCM:"+ncmNihao+";");
+                writer.write("你好悟空;");
                 writer.write("\n");
+                Log.d(TAG, "keyword2File: 写入唤醒词: 你好悟空");
             }
             writer.close();
+
+            // Print written file content for debugging
+            try (BufferedReader reader = new BufferedReader(new FileReader(keywordFile))) {
+                String line;
+                Log.d(TAG, "--- Start of keyword file content (" + keywordFile.getName() + ") ---");
+                while ((line = reader.readLine()) != null) {
+                    Log.d(TAG, line);
+                }
+                Log.d(TAG, "--- End of keyword file content ---");
+            } catch (IOException e) {
+                Log.w(TAG, "Failed to read back keyword file for logging", e);
+            }
 
             keywordDirty = false;
             Log.i(TAG, "Keyword file written: " + keywordFilePath);
@@ -441,27 +524,38 @@ public class AikitWakeEngine implements IWakeUpEngine {
     }
 
     /**
-     * Generate initial keyword file path (workDir/ivw/keyword.txt).
+     * Generate initial keyword file path (workDir/keyword.txt).
      */
-    private String generateKeywordFile() {
-        File ivwDir = new File(workDirPath, IVW_SUBDIR);
-        if (!ivwDir.exists()) {
-            ivwDir.mkdirs();
+    private String generateKeywordFile() throws CustomException {
+        RES_DIR = workDirPath + "/ivw";
+        File resDir = new File(RES_DIR);
+        if (!resDir.exists()) {
+            boolean dirCreated = resDir.mkdirs(); // 创建多级目录
+            if (!dirCreated) {
+                Log.e(TAG, "keyword2File: 无法创建目录 " + RES_DIR);
+                Log.e(TAG, "请检查RES_DIR路径是否正确，或使用应用内部存储目录");
+                throw new CustomException("generateKeywordFile: 无法创建目录" + RES_DIR);
+            }
+            Log.d(TAG, "keyword2File: 成功创建目录 " + RES_DIR);
         }
-        return new File(ivwDir, "keyword.txt").getAbsolutePath();
+        if (!resDir.canWrite()) {
+            Log.e(TAG, "keyword2File: 目录不可写 " + RES_DIR);
+            throw new CustomException("generateKeywordFile: 目录不可写" + RES_DIR);
+        }
+        return new File(RES_DIR, "keyword.txt").getAbsolutePath();
     }
 
     // ==================== Internal: Resource Copy ====================
 
     /**
-     * Copy IVW model resources from assets/xunfeiResource/ivw/ to workDir/ivw/.
+     * Copy IVW model resources from assets/xunfeiResource/ivw/ to workDir/.
      * These model files (IVW_FILLER_1, IVW_GRAM_1, IVW_KEYWORD_1, IVW_MLP_1)
      * are required by the AIKit IVW engine.
      */
     private void copyIvwResources(String workDir) throws IOException {
-        File ivwDir = new File(workDir, IVW_SUBDIR);
-        if (!ivwDir.exists()) {
-            ivwDir.mkdirs();
+        File destDir = new File(workDir);
+        if (!destDir.exists()) {
+            destDir.mkdirs();
         }
 
         AssetManager assets = context.getAssets();
@@ -473,7 +567,9 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
         for (String fileName : files) {
             String assetPath = IVW_ASSET_DIR + "/" + fileName;
-            File destFile = new File(ivwDir, fileName);
+            Log.d(TAG, "assetPath: " + assetPath);
+            File destFile = new File(destDir, fileName);
+            Log.d(TAG,"destFile: " + destDir + " " +  fileName);
 
             // Skip if already exists and not a directory
             if (destFile.exists() && !destFile.isDirectory()) {
@@ -497,7 +593,7 @@ public class AikitWakeEngine implements IWakeUpEngine {
             }
         }
 
-        Log.i(TAG, "IVW resources copied to " + ivwDir.getAbsolutePath());
+        Log.i(TAG, "IVW resources copied to " + destDir.getAbsolutePath());
     }
 
     /**
@@ -515,6 +611,7 @@ public class AikitWakeEngine implements IWakeUpEngine {
             File childDest = new File(destDir, fileName);
 
             String[] subFiles = assets.list(childAssetPath);
+            Log.d(TAG,"childAssetPath: " + childAssetPath);
             if (subFiles != null && subFiles.length > 0) {
                 copyAssetDir(assets, childAssetPath, childDest);
             } else {

@@ -12,6 +12,8 @@ import com.wukong.agent.data.entity.ChatHistoryEntity;
 import com.wukong.agent.data.entity.WakeUpLogEntity;
 import com.wukong.agent.data.entity.ActionEntity;
 
+import java.util.concurrent.CountDownLatch;
+
 @Database(
     entities = {
         ChatHistoryEntity.class,
@@ -41,6 +43,23 @@ public abstract class WukongDatabase extends RoomDatabase {
                     )
                     .fallbackToDestructiveMigration()
                     .build();
+                }
+            }
+        }
+        return INSTANCE;
+    }
+
+    public static WukongDatabase getInstance(Context context, CountDownLatch initLatch) {
+        if (INSTANCE == null) {
+            synchronized (WukongDatabase.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = Room.databaseBuilder(
+                                    context.getApplicationContext(),
+                                    WukongDatabase.class,
+                                    "wukong_agent_db"
+                            )
+                            .fallbackToDestructiveMigration()
+                            .build();
                 }
             }
         }

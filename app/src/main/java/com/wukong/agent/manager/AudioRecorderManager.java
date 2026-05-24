@@ -47,6 +47,14 @@ public class AudioRecorderManager {
         void onRecordingError(String errorMessage); // 录音发生错误
     }
 
+    public interface InitCallback {
+        void onInitComplete();
+    }
+    private InitCallback initCallback;
+    public void setInitCallback(InitCallback callback) {
+        this.initCallback = callback;
+    }
+
     private final Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -164,11 +172,13 @@ public class AudioRecorderManager {
                         Log.e(TAG, "PreProcessedRecorder init failed, state: " + result);
                         notifyError("PreProcessedRecorder init failed: " + result);
                     }
+                    initCallback.onInitComplete();
                     return kotlin.Unit.INSTANCE;
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Failed to init PreProcessedRecorder", e);
                 notifyError("Init failed: " + e.getMessage());
+                initCallback.onInitComplete();
             }
         });
     }
