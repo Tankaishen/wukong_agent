@@ -24,7 +24,13 @@ public class ServiceRestartReceiver extends BroadcastReceiver {
                 return;
             }
             Log.i(TAG, "Received restart request, starting WukongService");
-//            WukongService.start(context);
+//            handler.postDelayed(() -> {
+//                if (shouldReconnect && !isConnected) {
+//                    WukongService.start(context);
+//                    Log.i(TAG, "Attempting to reconnect...");
+//                }
+//            }, delay);
+            WukongService.start(context);
         }
     }
 }

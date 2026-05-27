@@ -13,6 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * TTSEngine uses AudioTrack to stream-play TTS audio received from WebSocket.
@@ -39,6 +40,8 @@ public class TTSEngine {
     private final AtomicBoolean isPlaying = new AtomicBoolean(false);
     private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
     private final AtomicBoolean isInitialized = new AtomicBoolean(false);
+
+    private final AtomicInteger totalnum = new AtomicInteger(0);
     private CountDownLatch initLatch;
     private int volume = 80; // 0-100
     public TTSEngine() {}
@@ -102,6 +105,8 @@ public class TTSEngine {
         isInitialized.set(false);
         initLatch = new CountDownLatch(1);
 
+        totalnum.set(0);
+
         executor.execute(() -> {
             try {
                 initAudioTrack();
@@ -143,7 +148,7 @@ public class TTSEngine {
             Log.w(TAG, "feedAudioData interrupted while waiting for init");
             return;
         }
-
+        Log.d(TAG,"Feeding audio data");
         // Initialization failed or not yet complete
         if (!isInitialized.get() || audioTrack == null) return;
 
@@ -151,6 +156,7 @@ public class TTSEngine {
         executor.execute(() -> {
             if (!isInterrupted.get() && audioTrack != null) {
                 int written = audioTrack.write(pcmData, 0, pcmData.length);
+                Log.d(TAG,"Write num:" + written);
             }
         });
     }
@@ -164,17 +170,29 @@ public class TTSEngine {
             Log.d(TAG, "finishFeed call");
             if (audioTrack != null && !isInterrupted.get()) {
                 try {
+                    int format = audioTrack.getAudioFormat();
+                    int channelCount = audioTrack.getChannelCount();
+                    int bytesPerSample = (format == AudioFormat.ENCODING_PCM_16BIT) ? 2 :
+                            (format == AudioFormat.ENCODING_PCM_FLOAT) ? 4 : 1;
+
+                    // 生成一个能够填满 AudioTrack 缓冲区的静音数据 (全 0)
+                    int bufferSizeInBytes = audioTrack.getBufferSizeInFrames() * channelCount * bytesPerSample;
+                    byte[] silence = new byte[bufferSizeInBytes];
+                    Log.d(TAG,"format:"+format+" channelCount:"+channelCount+" bytesPerSample:"+bytesPerSample+" bufferSizeInBytes:"+bufferSizeInBytes);
+                    // 阻塞式写入。当写入完成时，之前的真实 WebSocket 音频已经全部被消耗（播放）了
+                    audioTrack.write(silence, 0, silence.length);
+
                     // Wait for AudioTrack to finish playing all written data
-                    while (audioTrack.getPlaybackHeadPosition() < audioTrack.getBufferSizeInFrames()) {
-                        Log.d(TAG, "Func:finishFeed, head:" + audioTrack.getPlaybackHeadPosition());
-                        Thread.sleep(100);
-                        break;
-                    }
+//                    while (audioTrack.getPlaybackHeadPosition() < audioTrack.getBufferSizeInFrames()) {
+//                        Log.d(TAG, "Func:finishFeed, head:" + audioTrack.getPlaybackHeadPosition());
+//                        Thread.sleep(100);
+//                    }
 
                     // Short delay to ensure final samples are played
                     Thread.sleep(200);
                 } catch (InterruptedException e) {
                     // Interrupted, that's fine
+                    Log.e(TAG, "Error while draining audio track", e);
                 }
                 Log.d(TAG, "Func:finishFeed, isInterrupted is: " + isInterrupted.get());
                 if (!isInterrupted.get()) {

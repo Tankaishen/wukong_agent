@@ -140,6 +140,7 @@ public class WukongService extends Service implements
             return;
         }
         startStateMachine();
+        promptPlayer.play(PromptPlayer.Prompt.RECORD_END, null);
     }
 
     @Override
@@ -241,6 +242,8 @@ public class WukongService extends Service implements
         updateNotification(newState);
 
         switch (newState) {
+//            case Booting:
+//                promptPlayer.play(PromptPlayer.Prompt.RECORD_END, null);
             case IDLE:
                 // Stop wake engine listening from previous cycle
                 wakeUpEngine.stopListening();
@@ -253,6 +256,7 @@ public class WukongService extends Service implements
                 break;
 
             case WAKEUP:
+                webSocketManager.connect();
                 // Wake word detected — stop wakeup listening, prepare for ASR
                 audioRecorderManager.stopWakeupListening();
                 wakeUpEngine.stopListening();
@@ -390,7 +394,8 @@ public class WukongService extends Service implements
             stateMachine.transitionTo(BusinessState.PLAYING, "tts_start");
             ttsEngine.startPlayback();
         }
-
+        Log.d(TAG,"In Func:handleTtsMessage: message.getAudioBase64()=" + message.getAudioBase64());
+        Log.d(TAG,"In Func:handleTtsMessage: message.getAudioBase64().isEmpty()=" + message.getAudioBase64().isEmpty());
         if (message.getAudioBase64() != null && !message.getAudioBase64().isEmpty()) {
             ttsEngine.feedAudioData(message.getAudioBase64());
         }
@@ -411,6 +416,8 @@ public class WukongService extends Service implements
                     System.currentTimeMillis()),
                 null);
         }
+        Log.d(TAG,"In Func:handleTtsMessage: message.getText()=" + message.getText());
+        Log.d(TAG,"In Func:handleTtsMessage: message.getText().isEmpty()=" + message.getText().isEmpty());
 
         if (message.isFinal()) {
             Log.d(TAG,"Receive message.isFinal!");

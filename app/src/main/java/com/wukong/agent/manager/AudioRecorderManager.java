@@ -164,7 +164,11 @@ public class AudioRecorderManager {
                     if (result == PreProcessedRecorder.INIT_STATE_SUCCESS) {
                         recorderInitialized.set(true);
                         Log.i(TAG, "PreProcessedRecorder initialized successfully");
-
+                        // Register listeners ONCE after init to avoid hardware toggle overhead
+                        PreProcessedRecorder.INSTANCE.registerRecordListener(
+                                wakeupRecordListener, AudioRecorder.Type.FOR_WAKEUP);
+                        PreProcessedRecorder.INSTANCE.registerRecordListener(
+                                asrRecordListener, AudioRecorder.Type.FOR_ASR);
                         // Auto-start the recorder hardware after successful init
                         startRecorderHardware();
                     } else {
@@ -238,20 +242,22 @@ public class AudioRecorderManager {
             Log.w(TAG, "Cannot start wakeup listening: recorder not ready");
             return;
         }
-        if (wakeupListening.get()) {
-            Log.d(TAG, "Wakeup listening already active");
-            return;
-        }
-
-        try {
-            PreProcessedRecorder.INSTANCE.registerRecordListener(
-                wakeupRecordListener, AudioRecorder.Type.FOR_WAKEUP);
-            wakeupListening.set(true);
-            Log.i(TAG, "Wakeup listening started (FOR_WAKEUP registered)");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to register FOR_WAKEUP listener", e);
-            notifyError("Start wakeup listening failed: " + e.getMessage());
-        }
+//        if (wakeupListening.get()) {
+//            Log.d(TAG, "Wakeup listening already active");
+//            return;
+//        }
+//
+//        try {
+//            PreProcessedRecorder.INSTANCE.registerRecordListener(
+//                wakeupRecordListener, AudioRecorder.Type.FOR_WAKEUP);
+//            wakeupListening.set(true);
+//            Log.i(TAG, "Wakeup listening started (FOR_WAKEUP registered)");
+//        } catch (Exception e) {
+//            Log.e(TAG, "Failed to register FOR_WAKEUP listener", e);
+//            notifyError("Start wakeup listening failed: " + e.getMessage());
+//        }
+        wakeupListening.set(true);
+        Log.i(TAG, "Wakeup listening enabled (internal flag set)");
     }
 
     /**
@@ -259,16 +265,18 @@ public class AudioRecorderManager {
      * Called when transitioning from IDLE to RECORDING (wake detection not needed during ASR).
      */
     public void stopWakeupListening() {
-        if (!wakeupListening.get()) return;
-
-        try {
-            PreProcessedRecorder.INSTANCE.unregisterRecordListener(
-                wakeupRecordListener, AudioRecorder.Type.FOR_WAKEUP);
-            wakeupListening.set(false);
-            Log.i(TAG, "Wakeup listening stopped (FOR_WAKEUP unregistered)");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to unregister FOR_WAKEUP listener", e);
-        }
+//        if (!wakeupListening.get()) return;
+//
+//        try {
+//            PreProcessedRecorder.INSTANCE.unregisterRecordListener(
+//                wakeupRecordListener, AudioRecorder.Type.FOR_WAKEUP);
+//            wakeupListening.set(false);
+//            Log.i(TAG, "Wakeup listening stopped (FOR_WAKEUP unregistered)");
+//        } catch (Exception e) {
+//            Log.e(TAG, "Failed to unregister FOR_WAKEUP listener", e);
+//        }
+        wakeupListening.set(false);
+        Log.i(TAG, "Wakeup listening disabled (internal flag cleared)");
     }
 
     // ==================== ASR Audio Control ====================
@@ -281,32 +289,39 @@ public class AudioRecorderManager {
      * @return Session ID for this recording session
      */
     public String startAsrRecording() {
-        if (!recorderInitialized.get() || !recorderStarted.get()) {
-            Log.w(TAG, "Cannot start ASR recording: recorder not ready");
-            return currentSessionId;
-        }
-
+//        if (!recorderInitialized.get() || !recorderStarted.get()) {
+//            Log.w(TAG, "Cannot start ASR recording: recorder not ready");
+//            return currentSessionId;
+//        }
+//
+//        currentSessionId = UUID.randomUUID().toString();
+//
+//        if (asrRecording.get()) {
+//            Log.d(TAG, "ASR recording already active, session: " + currentSessionId);
+//            return currentSessionId;
+//        }
+//
+//        if (vadDetector != null) {
+//            vadDetector.reset();
+//        }
+//
+//        try {
+//            PreProcessedRecorder.INSTANCE.registerRecordListener(
+//                asrRecordListener, AudioRecorder.Type.FOR_ASR);
+//            asrRecording.set(true);
+//            Log.i(TAG, "ASR recording started, session: " + currentSessionId);
+//        } catch (Exception e) {
+//            Log.e(TAG, "Failed to register FOR_ASR listener", e);
+//            notifyError("Start ASR recording failed: " + e.getMessage());
+//        }
+//
+//        return currentSessionId;
         currentSessionId = UUID.randomUUID().toString();
-
-        if (asrRecording.get()) {
-            Log.d(TAG, "ASR recording already active, session: " + currentSessionId);
-            return currentSessionId;
-        }
-
         if (vadDetector != null) {
             vadDetector.reset();
         }
-
-        try {
-            PreProcessedRecorder.INSTANCE.registerRecordListener(
-                asrRecordListener, AudioRecorder.Type.FOR_ASR);
-            asrRecording.set(true);
-            Log.i(TAG, "ASR recording started, session: " + currentSessionId);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to register FOR_ASR listener", e);
-            notifyError("Start ASR recording failed: " + e.getMessage());
-        }
-
+        asrRecording.set(true);
+        Log.i(TAG, "ASR recording enabled, session: " + currentSessionId);
         return currentSessionId;
     }
 
@@ -315,16 +330,18 @@ public class AudioRecorderManager {
      * Called when leaving RECORDING state.
      */
     public void stopAsrRecording() {
-        if (!asrRecording.get()) return;
-
-        try {
-            PreProcessedRecorder.INSTANCE.unregisterRecordListener(
-                asrRecordListener, AudioRecorder.Type.FOR_ASR);
-            asrRecording.set(false);
-            Log.i(TAG, "ASR recording stopped, session: " + currentSessionId);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to unregister FOR_ASR listener", e);
-        }
+//        if (!asrRecording.get()) return;
+//
+//        try {
+//            PreProcessedRecorder.INSTANCE.unregisterRecordListener(
+//                asrRecordListener, AudioRecorder.Type.FOR_ASR);
+//            asrRecording.set(false);
+//            Log.i(TAG, "ASR recording stopped, session: " + currentSessionId);
+//        } catch (Exception e) {
+//            Log.e(TAG, "Failed to unregister FOR_ASR listener", e);
+//        }
+        asrRecording.set(false);
+        Log.i(TAG, "ASR recording disabled");
     }
 
     // ==================== State Queries ====================

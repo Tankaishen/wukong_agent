@@ -12,9 +12,13 @@ public class BootCompletedReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
+        Log.i(TAG, "Received broadcast: " + action);
+        
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
-                || "android.intent.action.QUICKBOOT_POWERON".equals(action)) {
-            Log.i(TAG, "Boot completed, starting WukongService");
+                || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
+                || "android.intent.action.QUICKBOOT_POWERON".equals(action)
+                ||"com.wukong.agent.TEST_BOOT".equals(action)) {
+            Log.i(TAG, "Boot completed or unlocked, starting WukongService");
             WukongService.start(context);
         }
     }
