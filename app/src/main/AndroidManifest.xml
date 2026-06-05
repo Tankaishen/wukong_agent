@@ -16,6 +16,7 @@
 
     <!-- Audio -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Storage (required by AIKit and robot SDK) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
@@ -71,7 +72,7 @@
             android:name=".service.WukongService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|microphone" />
 
         <!-- Boot Completed Receiver -->
         <receiver
@@ -82,7 +83,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+<!--                <action android:name="android.intent.action.QUICKBOOT_POWERON" />-->
                 <category android:name="android.intent.category.DEFAULT" />
                 <action android:name="com.wukong.agent.TEST_BOOT" />
             </intent-filter>

@@ -1,6 +1,8 @@
 package com.wukong.agent.manager;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -8,12 +10,14 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.ubtrobot.api.PreProcessedRecorder;
 import com.ubtrobot.recorder.AudioRecordListener;
 import com.ubtrobot.recorder.AudioRecorder;
 import com.wukong.agent.interfaces.IWakeUpEngine;
 import com.wukong.agent.util.AudioUtils;
+import com.wukong.agent.util.RetryUtils;
 import com.wukong.agent.util.VADDetector;
 
 /**
@@ -36,6 +40,11 @@ public class AudioRecorderManager {
     private static final int CHANNELS = 1;
     private static final int BIT_DEPTH = 16;
 
+    /** Max retries for starting recorder hardware (AudioFlinger may not be ready at boot) */
+    private static final int MAX_START_RETRIES = 5;
+    /** Base delay between retries (ms), doubles each retry: 1s, 2s, 4s, 8s, 16s */
+    private static final long RETRY_BASE_DELAY_MS = 1000;
+
     /**
      * Listener for ASR audio data (single-channel, post-VAD).
      * Wake word audio is delivered directly to IWakeUpEngine, not through this listener.
@@ -49,6 +58,8 @@ public class AudioRecorderManager {
 
     public interface InitCallback {
         void onInitComplete();
+        /** Called when the recorder hardware is successfully started and ready for audio. */
+        void onRecorderReady();
     }
     private InitCallback initCallback;
     public void setInitCallback(InitCallback callback) {
@@ -78,7 +89,6 @@ public class AudioRecorderManager {
     public AudioRecorderManager(Context context) {
         Log.i(TAG, "AudioRecorderManager construct!");
         this.context = context.getApplicationContext();
-
         // FOR_WAKEUP listener: 16bit mono PCM → forward to wake engine
         wakeupRecordListener = (data, length) -> {
             if (!wakeupListening.get()) return;
@@ -151,14 +161,29 @@ public class AudioRecorderManager {
     }
 
     // ==================== PreProcessedRecorder Lifecycle ====================
-
     /**
      * Initialize PreProcessedRecorder (async).
      * Must be called before any start/stop/register operations.
      * Requires network connection (per SDK docs).
      */
     public void init() {
+        int initStatus = PreProcessedRecorder.INSTANCE.getInitStatus();
+        int status = PreProcessedRecorder.INSTANCE.getState();
+        Log.d(TAG,"PreProcessedRecorder status:" + initStatus + " " + status);
         executor.execute(() -> {
+            int retryCount = 0;
+            while (!isNetworkAvailable()){
+                Log.w(TAG, "Network not ready, waiting for connection...retryCount:" + retryCount);
+                RetryUtils.waitFor(retryCount,RETRY_BASE_DELAY_MS);
+//                long delay = RETRY_BASE_DELAY_MS * (1L << (retryCount - 1)); // exponential backoff
+//                ++retryCount;
+//                try {
+//                    Thread.sleep(delay);
+//                } catch (InterruptedException e) {
+//                    throw new RuntimeException(e);
+//                }
+                ++retryCount;
+            }
             try {
                 PreProcessedRecorder.INSTANCE.init(context, result -> {
                     if (result == PreProcessedRecorder.INIT_STATE_SUCCESS) {
@@ -187,28 +212,90 @@ public class AudioRecorderManager {
         });
     }
 
+    private boolean isNetworkAvailable() {
+        ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        NetworkInfo info = cm.getActiveNetworkInfo();
+        return info != null && info.isConnected();
+    }
+
     /**
      * Start the PreProcessedRecorder hardware (mic array).
      * Called automatically after successful init.
      * The recorder stays running — we switch modes by register/unregister listeners.
+     *
+     * Retries with exponential backoff if start fails (AudioFlinger may not be
+     * ready at boot time — error -1 from createRecord is common).
      */
     private void startRecorderHardware() {
+//        if (recorderStarted.get()) {
+//            Log.d(TAG, "Recorder hardware already started");
+//            return;
+//        }
+//        try {
+//            boolean success = PreProcessedRecorder.INSTANCE.start();
+//            if (success) {
+//                recorderStarted.set(true);
+//                Log.i(TAG, "PreProcessedRecorder hardware started");
+//            } else {
+//                Log.e(TAG, "PreProcessedRecorder.start() returned false");
+//                notifyError("Failed to start recorder hardware");
+//            }
+//        } catch (Exception e) {
+//            Log.e(TAG, "Error starting recorder hardware", e);
+//            notifyError("Start hardware failed: " + e.getMessage());
+//        }
         if (recorderStarted.get()) {
             Log.d(TAG, "Recorder hardware already started");
             return;
         }
-        try {
-            boolean success = PreProcessedRecorder.INSTANCE.start();
-            if (success) {
-                recorderStarted.set(true);
-                Log.i(TAG, "PreProcessedRecorder hardware started");
-            } else {
-                Log.e(TAG, "PreProcessedRecorder.start() returned false");
-                notifyError("Failed to start recorder hardware");
+
+        AtomicInteger retryCount = new AtomicInteger(0);
+
+        while (retryCount.get() < MAX_START_RETRIES) {
+            try {
+                boolean success = PreProcessedRecorder.INSTANCE.start();
+                if (success) {
+                    recorderStarted.set(true);
+                    Log.i(TAG, "PreProcessedRecorder hardware started" +
+                          (retryCount.get() > 0 ? " (retry #" + retryCount.get() + ")" : ""));
+                    // Notify service that recorder is now ready
+                    handler.post(() -> {
+                        if (initCallback != null) {
+                            initCallback.onRecorderReady();
+                        }
+                    });
+                    return;
+                } else {
+                    int attempt = retryCount.incrementAndGet();
+                    if (attempt >= MAX_START_RETRIES) {
+                        Log.e(TAG, "PreProcessedRecorder.start() failed after " + MAX_START_RETRIES + " retries");
+                        notifyError("Failed to start recorder hardware after " + MAX_START_RETRIES + " retries");
+                        return;
+                    }
+                    long delay = RETRY_BASE_DELAY_MS * (1L << (attempt - 1)); // exponential backoff
+                    Log.w(TAG, "PreProcessedRecorder.start() returned false, retry #" + attempt +
+                          " in " + delay + "ms");
+                    Thread.sleep(delay);
+                }
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Recorder start retry interrupted");
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception e) {
+                int attempt = retryCount.incrementAndGet();
+                if (attempt >= MAX_START_RETRIES) {
+                    Log.e(TAG, "Error starting recorder hardware after " + MAX_START_RETRIES + " retries", e);
+                    notifyError("Start hardware failed: " + e.getMessage());
+                    return;
+                }
+                long delay = RETRY_BASE_DELAY_MS * (1L << (attempt - 1));
+                Log.w(TAG, "Exception starting hardware, retry #" + attempt + " in " + delay + "ms", e);
+                try { Thread.sleep(delay); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error starting recorder hardware", e);
-            notifyError("Start hardware failed: " + e.getMessage());
         }
     }
 
@@ -219,6 +306,10 @@ public class AudioRecorderManager {
     private void stopRecorderHardware() {
         if (!recorderStarted.get()) return;
         try {
+            PreProcessedRecorder.INSTANCE.unregisterRecordListener(
+                            wakeupRecordListener, AudioRecorder.Type.FOR_WAKEUP);
+            PreProcessedRecorder.INSTANCE.unregisterRecordListener(
+                    asrRecordListener, AudioRecorder.Type.FOR_ASR);
             boolean success = PreProcessedRecorder.INSTANCE.stop();
             if (success) {
                 recorderStarted.set(false);
@@ -348,6 +439,11 @@ public class AudioRecorderManager {
 
     public boolean isRecorderInitialized() {
         return recorderInitialized.get();
+    }
+
+    /** Returns true if both init and hardware start succeeded. */
+    public boolean isRecorderReady() {
+        return recorderInitialized.get() && recorderStarted.get();
     }
 
     public boolean isWakeupListening() {

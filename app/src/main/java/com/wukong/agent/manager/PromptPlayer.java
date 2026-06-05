@@ -46,6 +46,7 @@ public class PromptPlayer {
     /** Prompt sound types, mapped to res/raw/ resources */
     public enum Prompt {
         /** Wake-up beep (beep_hi.wav) — played on wake word detection */
+        BOOTINGSUCCESS(R.raw.beep_lo),
         WAKEUP(R.raw.beep_hi),
         /** Record-end beep (beep_lo.wav) — played when recording finishes */
         RECORD_END(R.raw.beep_lo);

@@ -33,20 +33,28 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void requestNotificationPermissionIfNeeded() {
+        String[] permissions;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                // 先检查是否用户之前选了"不再询问"
-                if (ActivityCompat.shouldShowRequestPermissionRationale(
-                        this, Manifest.permission.POST_NOTIFICATIONS)) {
-                    Toast.makeText(this,
-                            R.string.notification_permission_rationale,
-                            Toast.LENGTH_LONG).show();
-                }
-                ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                        REQUEST_POST_NOTIFICATIONS);
+            permissions = new String[]{
+                    Manifest.permission.POST_NOTIFICATIONS,
+                    Manifest.permission.RECORD_AUDIO
+            };
+        } else {
+            permissions = new String[]{
+                    Manifest.permission.RECORD_AUDIO
+            };
+        }
+
+        boolean allGranted = true;
+        for (String p : permissions) {
+            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
             }
+        }
+
+        if (!allGranted) {
+            ActivityCompat.requestPermissions(this, permissions, REQUEST_POST_NOTIFICATIONS);
         }
     }
 

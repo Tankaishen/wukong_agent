@@ -9,6 +9,7 @@ public class WebSocketMessage {
     public static final String TYPE_PING = "ping";
     public static final String TYPE_PONG = "pong";
     public static final String TYPE_ERROR = "error";
+    public static final String TYPE_CANCEL = "cancel";
 
     @SerializedName("type")
     private String type;
@@ -41,6 +42,14 @@ public class WebSocketMessage {
         return msg;
     }
 
+    // Cancel message — notify server to stop generating for a session
+    public static WebSocketMessage createCancel(String sessionId) {
+        WebSocketMessage msg = new WebSocketMessage();
+        msg.type = TYPE_CANCEL;
+        msg.sessionId = sessionId;
+        return msg;
+    }
+
     // Ping message
     public static WebSocketMessage createPing() {
         WebSocketMessage msg = new WebSocketMessage();
@@ -61,4 +70,5 @@ public class WebSocketMessage {
     public boolean isChat() { return TYPE_CHAT.equals(type); }
     public boolean isPong() { return TYPE_PONG.equals(type); }
     public boolean isError() { return TYPE_ERROR.equals(type); }
+    public boolean isCancel() { return TYPE_CANCEL.equals(type); }
 }

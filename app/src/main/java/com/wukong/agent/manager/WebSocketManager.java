@@ -12,6 +12,8 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import okio.ByteString;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -38,6 +40,9 @@ public class WebSocketManager {
     private boolean isConnected = false;
     private boolean shouldReconnect = true;
     private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
+
+    // Session cancellation: tracks sessions that were interrupted, so stale TTS is discarded
+    private final Set<String> cancelledSessions = ConcurrentHashMap.newKeySet();
 
     // Heartbeat
     private Runnable heartbeatRunnable;
@@ -173,6 +178,45 @@ public class WebSocketManager {
     public boolean sendRaw(String json) {
         if (!isConnected || webSocket == null) return false;
         return webSocket.send(json);
+    }
+
+    // ==================== Session Cancellation ====================
+
+    /**
+     * Cancel the current session so that any late-arriving TTS for it is discarded.
+     * Also sends a cancel message to the server so it can stop generating.
+     *
+     * @param sessionId The session to cancel
+     */
+    public void cancelSession(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty()) return;
+        cancelledSessions.add(sessionId);
+        Log.i(TAG, "Session cancelled: " + sessionId);
+
+        // Notify server to stop generating for this session
+        if (isConnected && webSocket != null) {
+            String json = gson.toJson(WebSocketMessage.createCancel(sessionId));
+            webSocket.send(json);
+        }
+    }
+
+    /**
+     * Check if a session has been cancelled.
+     * Called when a TTS message arrives — if the session is cancelled, discard it.
+     *
+     * @param sessionId The session ID to check
+     * @return true if the session was cancelled (and removed from the set), false otherwise
+     */
+    public boolean checkAndRemoveCancelled(String sessionId) {
+        return cancelledSessions.remove(sessionId);
+    }
+
+    /**
+     * Clear all cancelled sessions. Called when a new recording session starts
+     * to prevent memory leaks from accumulated session IDs.
+     */
+    public void clearCancelledSessions() {
+        cancelledSessions.clear();
     }
 
     private void startHeartbeat() {

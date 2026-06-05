@@ -37,7 +37,7 @@ public class TTSEngine {
     private TTSListener listener;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean isPlaying = new AtomicBoolean(false);
+    private static final AtomicBoolean isPlaying = new AtomicBoolean(false);
     private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
     private final AtomicBoolean isInitialized = new AtomicBoolean(false);
 
@@ -58,7 +58,7 @@ public class TTSEngine {
         }
     }
 
-    public boolean isPlaying() {
+    public static boolean isPlaying() {
         return isPlaying.get();
     }
 
@@ -207,8 +207,7 @@ public class TTSEngine {
      */
     public void stopPlayback() {
         isInterrupted.set(true);
-        isPlaying.set(false);
-        isInitialized.set(false);
+
 
         executor.execute(() -> {
             if (audioTrack != null) {
@@ -224,6 +223,8 @@ public class TTSEngine {
                     // Ignore
                 }
                 audioTrack = null;
+                isPlaying.set(false);
+                isInitialized.set(false);
             }
         });
 
@@ -231,11 +232,11 @@ public class TTSEngine {
     }
 
     private void completePlayback() {
-        isPlaying.set(false);
         if (audioTrack != null) {
             try {
                 audioTrack.stop();
                 audioTrack.release();
+                isPlaying.set(false);
             } catch (Exception e) {
                 // Ignore
             }

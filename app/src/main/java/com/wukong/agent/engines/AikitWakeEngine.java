@@ -1,4 +1,4 @@
-package com.wukong.agent.manager;
+package com.wukong.agent.engines;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -168,14 +168,6 @@ public class AikitWakeEngine implements IWakeUpEngine {
                 workDirPath = baseWorkDir.getAbsolutePath();
                 Log.i(TAG, "Aikit work directory: " + workDirPath);
 
-                // 2. Copy IVW model resources from assets to workDir/
-//                copyIvwResources(workDirPath);
-
-                // 3. Generate keyword file in workDir/
-//                keywordFilePath = generateKeywordFile();
-//                Log.d(TAG,"keywordFilePath: " + keywordFilePath);
-
-                // 4. Initialize AIKit SDK (use BaseLibrary.Params + initEntry as per sample)
                 BaseLibrary.Params params = BaseLibrary.Params.builder()
                     .appId(appId.trim())
                     .apiKey(apiKey.trim())
@@ -222,13 +214,16 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
     @Override
     public void startListening() {
-        if (isListening.get()) {
-            Log.w(TAG, "Already listening");
-            return;
-        }
         if (!isInitialized) {
             Log.e(TAG, "Engine not initialized, cannot start listening");
             notifyError("Cannot start listening: engine not initialized");
+            return;
+        }
+
+        // If already listening, stop first to avoid loadData 60014 (duplicate load)
+        if (isListening.get()) {
+            Log.w(TAG, "Already listening — stopping before restart to avoid loadData conflict");
+//            stopListening();
             return;
         }
 

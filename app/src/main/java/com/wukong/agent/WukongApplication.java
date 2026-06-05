@@ -16,7 +16,9 @@ public class WukongApplication extends Application {
         Log.i(TAG, "WukongApplication onCreate");
 
         // Schedule watchdog to ensure service stays alive
-        WukongService.start(this);
+//        if(!WukongService.isRunning()){
+//            WukongService.start(this);
+//        }
 //        ServiceWatchdog.scheduleWatchdog(this);
     }
 }

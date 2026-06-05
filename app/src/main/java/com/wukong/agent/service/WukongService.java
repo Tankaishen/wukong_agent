@@ -28,6 +28,7 @@ import com.wukong.agent.data.db.WukongDatabase;
 import com.wukong.agent.data.repository.ChatHistoryRepository;
 import com.wukong.agent.data.repository.WakeUpLogRepository;
 import com.wukong.agent.data.repository.ActionRepository;
+import com.wukong.agent.factories.WakeEngineFactory;
 import com.wukong.agent.interfaces.IWakeUpEngine;
 import com.wukong.agent.manager.*;
 import com.wukong.agent.model.RobotConfig;
@@ -41,7 +42,6 @@ import com.wukong.agent.watchdog.ServiceWatchdog;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class WukongService extends Service implements
         StateChangeListener,
@@ -121,14 +121,20 @@ public class WukongService extends Service implements
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.i(TAG, "WukongService onCreate");
 
         isRunning = true;
         instance = this;
         clearUserStoppedFlag();
 
         initNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification(BusinessState.IDLE));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startForeground(NOTIFICATION_ID, buildNotification(BusinessState.IDLE),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE |
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification(BusinessState.IDLE));
+        }
+
 
         initComponents();
         try {
@@ -139,8 +145,9 @@ public class WukongService extends Service implements
             Log.w(TAG, "feedAudioData interrupted while waiting for init");
             return;
         }
+        wakeUpEngine.startListening();
         startStateMachine();
-        promptPlayer.play(PromptPlayer.Prompt.RECORD_END, null);
+        promptPlayer.play(PromptPlayer.Prompt.BOOTINGSUCCESS, null);
     }
 
     @Override
@@ -161,18 +168,19 @@ public class WukongService extends Service implements
         isRunning = false;
         instance = null;
         cleanup();
-        super.onDestroy();
-
         // Schedule restart (only effective if not user-initiated stop)
         Intent intent = new Intent("com.wukong.agent.RESTART_SERVICE");
         intent.setPackage(getPackageName()); // 原始代码是去掉这一行
         sendBroadcast(intent);
+        super.onDestroy();
     }
 
     // ==================== Initialization ====================
 
     private void initComponents() {
         initLatch = new CountDownLatch(2);
+        // Initialize robot SDK
+        WkSdk.INSTANCE.init(this);
         // Database
         database = WukongDatabase.getInstance(this);
         chatHistoryRepository = new ChatHistoryRepository(database.chatHistoryDao());
@@ -218,9 +226,6 @@ public class WukongService extends Service implements
         coordinator = new RobotStateCoordinator(this, stateMachine);
         coordinator.init();
 
-        // Initialize robot SDK
-         WkSdk.INSTANCE.init(this);
-
         // Initialize PreProcessedRecorder
         audioRecorderManager.init();
 
@@ -246,20 +251,20 @@ public class WukongService extends Service implements
 //                promptPlayer.play(PromptPlayer.Prompt.RECORD_END, null);
             case IDLE:
                 // Stop wake engine listening from previous cycle
-                wakeUpEngine.stopListening();
+//                wakeUpEngine.stopListening();
                 // Stop ASR recording if it was active
                 audioRecorderManager.stopAsrRecording();
 
                 // Start wake word listening: register FOR_WAKEUP listener + start wake engine
                 audioRecorderManager.startWakeupListening();
-                wakeUpEngine.startListening();
+//                wakeUpEngine.startListening();
                 break;
 
             case WAKEUP:
                 webSocketManager.connect();
                 // Wake word detected — stop wakeup listening, prepare for ASR
                 audioRecorderManager.stopWakeupListening();
-                wakeUpEngine.stopListening();
+//                wakeUpEngine.stopListening();
                 // Play wake-up prompt (beep_hi), then transition to RECORDING after it finishes
                 promptPlayer.play(PromptPlayer.Prompt.WAKEUP, () -> {
                     if (stateMachine.getCurrentState() == BusinessState.WAKEUP) {
@@ -270,6 +275,8 @@ public class WukongService extends Service implements
 
             case RECORDING:
                 // Start ASR recording: register FOR_ASR listener
+                // Clear cancelled sessions from previous cycle to prevent memory leak
+                webSocketManager.clearCancelledSessions();
                 audioRecorderManager.startAsrRecording();
                 break;
 
@@ -277,6 +284,9 @@ public class WukongService extends Service implements
                 // Stop ASR recording, play record-end prompt, send final marker to WebSocket
                 audioRecorderManager.stopAsrRecording();
                 promptPlayer.play(PromptPlayer.Prompt.RECORD_END, null);
+                // Enable wakeup audio forwarding + start wake engine for interrupt detection
+                audioRecorderManager.startWakeupListening();
+//                wakeUpEngine.startListening();
                 String sessionId = audioRecorderManager.getCurrentSessionId();
                 if (sessionId != null) {
                     webSocketManager.sendChatMessage(sessionId, "", true);
@@ -309,21 +319,46 @@ public class WukongService extends Service implements
 
         if (current == BusinessState.IDLE) {
             // Normal wake up from idle
-            // Wake-up prompt (beep_hi) is played in onStateChanged(WAKEUP)
             stateMachine.transitionTo(BusinessState.WAKEUP, "wake: " + keyword);
-        } else if (current == BusinessState.PLAYING) {
-            // Interrupt: stop TTS and start new recording
-            ttsEngine.stopPlayback();
-            robotActionManager.stopAction();
-            // Stop any active audio listeners before transitioning
-            audioRecorderManager.stopAsrRecording();
-            audioRecorderManager.stopWakeupListening();
-            wakeUpEngine.stopListening();
-            stateMachine.forceTransitionTo(BusinessState.RECORDING, "interrupt: " + keyword);
-        } else if (current == BusinessState.RECORDING) {
-            // Already recording, ignore or restart
-            Log.d(TAG, "Wake word during recording, ignoring");
+        } else if (current == BusinessState.PROCESSING || current == BusinessState.PLAYING) {
+            // Interrupt: stop current output and start a new conversation cycle
+            handleInterrupt("interrupt: " + keyword);
+        } else {
+            // WAKEUP or RECORDING: already listening, ignore
+            Log.d(TAG, "Wake word during " + current + ", ignoring");
         }
+    }
+
+    /**
+     * Unified interrupt handler for PROCESSING and PLAYING states.
+     * Stops all output (TTS, actions), cancels the current WS session,
+     * then transitions to WAKEUP which plays beep_hi and starts a new recording.
+     */
+    private void handleInterrupt(String reason) {
+        Log.i(TAG, "handleInterrupt: " + reason);
+
+        // 1. Cancel the current WebSocket session (prevent stale TTS from being played)
+        String sessionId = audioRecorderManager.getCurrentSessionId();
+        if (sessionId != null) {
+            webSocketManager.cancelSession(sessionId);
+        }
+
+        // 2. Stop TTS playback immediately
+        ttsEngine.stopPlayback();
+
+        // 3. Stop robot actions
+        robotActionManager.stopAction();
+
+        // 4. Stop ASR recording (might still be active if interrupting from PROCESSING)
+        audioRecorderManager.stopAsrRecording();
+
+        // 5. Stop wakeup listening and wake engine
+        audioRecorderManager.stopWakeupListening();
+//        wakeUpEngine.stopListening();
+
+        while(TTSEngine.isPlaying());
+        // 6. Transition to WAKEUP — plays beep_hi, reconnects WS, then auto-transitions to RECORDING
+        stateMachine.forceTransitionTo(BusinessState.WAKEUP, reason);
     }
 
     @Override
@@ -359,6 +394,13 @@ public class WukongService extends Service implements
     @Override
     public void onRecordingError(String errorMessage) {
         Log.e(TAG, "Recording error: " + errorMessage);
+        // If recorder hardware isn't ready yet, don't force IDLE —
+        // the retry logic in AudioRecorderManager will call onRecorderReady() when it succeeds.
+        // Only force IDLE for non-hardware errors (e.g. actual recording failures).
+        if (!audioRecorderManager.isRecorderReady()) {
+            Log.w(TAG, "Recorder not ready, waiting for retry — not forcing IDLE");
+            return;
+        }
         stateMachine.forceTransitionTo(BusinessState.IDLE, "recording_error");
     }
 
@@ -376,11 +418,14 @@ public class WukongService extends Service implements
 
     @Override
     public void onMessage(WebSocketMessage message) {
-        if (message.isTts()) {
+        if (message.getSessionId().equals(audioRecorderManager.getCurrentSessionId())&&message.isTts()) {
             handleTtsMessage(message);
         } else if (message.isError()) {
             Log.e(TAG, "Server error: " + message.getError());
             stateMachine.forceTransitionTo(BusinessState.IDLE, "server_error");
+        } else {
+            Log.e(TAG,"message             =" + message.getSessionId());
+            Log.e(TAG,"audioRecorderManager=" + audioRecorderManager.getCurrentSessionId());
         }
     }
 
@@ -390,12 +435,19 @@ public class WukongService extends Service implements
     }
 
     private void handleTtsMessage(WebSocketMessage message) {
+        // Discard TTS for cancelled sessions (e.g. after interrupt)
+        String msgSessionId = message.getSessionId();
+        if (msgSessionId != null && webSocketManager.checkAndRemoveCancelled(msgSessionId)) {
+            Log.w(TAG, "Discarding TTS for cancelled session: " + msgSessionId);
+            return;
+        }
+
         if (stateMachine.getCurrentState() == BusinessState.PROCESSING) {
             stateMachine.transitionTo(BusinessState.PLAYING, "tts_start");
             ttsEngine.startPlayback();
         }
-        Log.d(TAG,"In Func:handleTtsMessage: message.getAudioBase64()=" + message.getAudioBase64());
-        Log.d(TAG,"In Func:handleTtsMessage: message.getAudioBase64().isEmpty()=" + message.getAudioBase64().isEmpty());
+//        Log.d(TAG,"In Func:handleTtsMessage: message.getAudioBase64()=" + message.getAudioBase64());
+//        Log.d(TAG,"In Func:handleTtsMessage: message.getAudioBase64().isEmpty()=" + message.getAudioBase64().isEmpty());
         if (message.getAudioBase64() != null && !message.getAudioBase64().isEmpty()) {
             ttsEngine.feedAudioData(message.getAudioBase64());
         }
@@ -625,5 +677,18 @@ public class WukongService extends Service implements
     @Override
     public void onInitComplete() {
         initLatch.countDown();
+    }
+
+    @Override
+    public void onRecorderReady() {
+        // Called when PreProcessedRecorder hardware is successfully started
+        // (may be delayed due to retry at boot time).
+        // If we're in IDLE state, try to start wakeup listening now.
+        Log.i(TAG, "Recorder hardware ready");
+        if (stateMachine != null && stateMachine.getCurrentState() == BusinessState.IDLE) {
+            audioRecorderManager.startWakeupListening();
+            wakeUpEngine.startListening();
+            Log.i(TAG, "Wakeup listening started after recorder became ready");
+        }
     }
 }

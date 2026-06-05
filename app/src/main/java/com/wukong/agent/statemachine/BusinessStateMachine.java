@@ -86,9 +86,11 @@ public class BusinessStateMachine {
             case RECORDING:
                 return to == BusinessState.PROCESSING || to == BusinessState.IDLE;
             case PROCESSING:
-                return to == BusinessState.PLAYING || to == BusinessState.IDLE;
+                return to == BusinessState.PLAYING || to == BusinessState.IDLE
+                        || to == BusinessState.WAKEUP;
             case PLAYING:
-                return to == BusinessState.IDLE || to == BusinessState.RECORDING;
+                return to == BusinessState.IDLE || to == BusinessState.RECORDING
+                        || to == BusinessState.WAKEUP;
             default:
                 return false;
         }
