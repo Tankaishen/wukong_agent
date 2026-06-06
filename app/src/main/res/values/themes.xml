@@ -6,4 +6,12 @@
         uses PreferenceFragmentCompat which renders its own layout.
     -->
     <style name="Theme.WukongAgent" parent="Theme.AppCompat.NoActionBar" />
+
+    <!-- Transparent theme for PermissionActivity (no visible UI, just permission dialog) -->
+    <style name="Theme.WukongAgent.Transparent" parent="Theme.WukongAgent">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
 </resources>

@@ -67,6 +67,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Transparent Activity for runtime permission requests from Service -->
+        <activity
+            android:name=".service.PermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.WukongAgent.Transparent"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:finishOnTaskLaunch="true" />
+
         <!-- Foreground Service -->
         <service
             android:name=".service.WukongService"

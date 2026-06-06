@@ -1,6 +1,6 @@
 package com.wukong.agent.factories;
 
-import com.wukong.agent.engines.AikitWakeEngine;
+import com.wukong.agent.wakeuper.AikitWakeEngine;
 import com.wukong.agent.interfaces.IWakeUpEngine;
 
 /**

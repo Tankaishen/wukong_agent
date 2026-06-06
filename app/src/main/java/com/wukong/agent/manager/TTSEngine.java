@@ -182,13 +182,6 @@ public class TTSEngine {
                     // 阻塞式写入。当写入完成时，之前的真实 WebSocket 音频已经全部被消耗（播放）了
                     audioTrack.write(silence, 0, silence.length);
 
-                    // Wait for AudioTrack to finish playing all written data
-//                    while (audioTrack.getPlaybackHeadPosition() < audioTrack.getBufferSizeInFrames()) {
-//                        Log.d(TAG, "Func:finishFeed, head:" + audioTrack.getPlaybackHeadPosition());
-//                        Thread.sleep(100);
-//                    }
-
-                    // Short delay to ensure final samples are played
                     Thread.sleep(200);
                 } catch (InterruptedException e) {
                     // Interrupted, that's fine

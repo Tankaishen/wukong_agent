@@ -52,6 +52,12 @@ public class WukongService extends Service implements
         WebSocketManager.WebSocketEventListener,
         TTSEngine.TTSListener {
 
+    /**
+     * Static reference to the current service instance for state queries.
+     * Set in onCreate(), cleared in onDestroy(). WeakReference alternative is overkill
+     * since service lifecycle is well-defined (system guarantees onCreate/Destroy pairing).
+     */
+    private static volatile WukongService instance = null;
     private static final String TAG = "WukongService";
     private static final int NOTIFICATION_ID = 1001;
     private static final String CHANNEL_ID = "wukong_service_channel";
@@ -66,13 +72,6 @@ public class WukongService extends Service implements
      *   which is exactly what the watchdog needs to detect.
      */
     private static volatile boolean isRunning = false; // 核心双标志机制的第一标志
-
-    /**
-     * Static reference to the current service instance for state queries.
-     * Set in onCreate(), cleared in onDestroy(). WeakReference alternative is overkill
-     * since service lifecycle is well-defined (system guarantees onCreate/Destroy pairing).
-     */
-    private static volatile WukongService instance = null;
 
     /**
      * Check if the service is currently running.
@@ -178,6 +177,7 @@ public class WukongService extends Service implements
     // ==================== Initialization ====================
 
     private void initComponents() {
+
         initLatch = new CountDownLatch(2);
         // Initialize robot SDK
         WkSdk.INSTANCE.init(this);
@@ -187,15 +187,16 @@ public class WukongService extends Service implements
         wakeUpLogRepository = new WakeUpLogRepository(database.wakeUpLogDao());
         actionRepository = new ActionRepository(database.actionDao());
 
-        // Config
-        configManager = ConfigManager.getInstance(this);
-        configManager.getConfigLiveData().observeForever(this::onConfigChanged);
-
-        // State machine
+        // State machine (MUST be created before observeForever, because LiveData may
+        // dispatch cached value synchronously on re-registration, triggering onConfigChanged)
         stateMachine = new BusinessStateMachine();
         stateMachine.addListener(this);
+
+        // Config — observeForever may fire onConfigChanged immediately if LiveData has a cached value,
+        // so all components referenced in onConfigChanged must already be initialized.
+        configManager = ConfigManager.getInstance(this);
+        configManager.getConfigLiveData().observeForever(this::onConfigChanged);
         stateMachine.applyConfigToStateMachine(configManager.getConfig());
-//        applyConfigToStateMachine(configManager.getConfig());
 
         // Wake engine (created via factory based on config)
         RobotConfig config = configManager.getConfig();
@@ -203,7 +204,7 @@ public class WukongService extends Service implements
         wakeUpEngine.setListener(this);
         wakeUpEngine.init(this, config.getWakeEngineCredentials());
 
-        audioRecorderManager = new AudioRecorderManager(this);
+        audioRecorderManager = new AudioRecorderManager(this, config.getRecorderType());
         audioRecorderManager.setAsrListener(this);
         audioRecorderManager.setInitCallback(this);
         audioRecorderManager.setWakeUpEngine(wakeUpEngine);
@@ -504,27 +505,37 @@ public class WukongService extends Service implements
         if (config == null) return;
 
         // Apply timeout settings
-        stateMachine.applyConfigToStateMachine(config);
+        if (stateMachine != null) {
+            stateMachine.applyConfigToStateMachine(config);
+        }
 
         // Update VAD parameters
-        audioRecorderManager.setVadParameters(
-            config.getVadEnergyThreshold(),
-            config.getVadSilenceDurationMs());
+        if (audioRecorderManager != null) {
+            audioRecorderManager.setVadParameters(
+                config.getVadEnergyThreshold(),
+                config.getVadSilenceDurationMs());
+        }
 
         // Update TTS volume
-        ttsEngine.setVolume(config.getTtsVolume());
+        if (ttsEngine != null) {
+            ttsEngine.setVolume(config.getTtsVolume());
+        }
 
         // Update WebSocket URL if changed
-        if (!config.getWsServerUrl().equals(webSocketManager.isConnected() ? "connected" : "")) {
-            webSocketManager.setServerUrl(config.getWsServerUrl());
+        if (webSocketManager != null) {
+            if (!config.getWsServerUrl().equals(webSocketManager.isConnected() ? "connected" : "")) {
+                webSocketManager.setServerUrl(config.getWsServerUrl());
+            }
         }
 
         // Update wake word config
-        wakeUpEngine.updateWakeWordConfig(
-            config.isWakeWukongEnabled(),
-            config.isWakeNihaoEnabled(),
-            config.getNcmWukong(),
-            config.getNcmNihao());
+        if (wakeUpEngine != null) {
+            wakeUpEngine.updateWakeWordConfig(
+                config.isWakeWukongEnabled(),
+                config.isWakeNihaoEnabled(),
+                config.getNcmWukong(),
+                config.getNcmNihao());
+        }
     }
 
 //    private void applyConfigToStateMachine(RobotConfig config) {
@@ -618,6 +629,25 @@ public class WukongService extends Service implements
     }
 
     // ==================== Static Control ====================
+
+    /**
+     * Check if RECORD_AUDIO permission is granted.
+     * If not, launch PermissionActivity to request it from the user.
+     * @return true if already granted, false if requesting (async).
+     */
+    private boolean ensureAudioPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG,"AUDIORECORDER PERMISSION GRANTED");
+            return true;
+        }
+        Log.d(TAG,"AUDIORECORDER PERMISSION NOT GRANTED");
+        // Launch transparent Activity to show system permission dialog
+        Intent permIntent = new Intent(this, PermissionActivity.class);
+        permIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(permIntent);
+        return false;
+    }
 
     public static void start(Context context) {
         if (isRunning()){

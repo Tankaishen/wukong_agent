@@ -10,6 +10,8 @@
     <string name="notification_text_error">Service error</string>
     <string name="notification_permission_rationale">Notification permission is needed to show service status in the notification bar.</string>
     <string name="notification_permission_denied">Notification permission denied. Service status updates won\'t appear in the notification bar.</string>
+    <string name="audio_permission_rationale">Microphone permission is required for wake word detection and voice chat.</string>
+    <string name="audio_permission_denied">Microphone permission denied. Wake word detection will not work.</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>

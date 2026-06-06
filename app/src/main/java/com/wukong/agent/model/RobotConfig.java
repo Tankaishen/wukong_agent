@@ -23,10 +23,12 @@ public class RobotConfig {
     private int playingTimeoutMs;
     private String llmModelName;
 
-    // 新增
     // "aikit" | "picovoice" | "baidu"
     private String wakeEngineType;
     private Map<String, String> wakeEngineCredentials; // 当前引擎的凭证
+
+    // "android" | "ubt"
+    private String recorderType;
 
     public RobotConfig() {
         // Defaults
@@ -45,6 +47,7 @@ public class RobotConfig {
         this.llmModelName = "";
         this.wakeEngineType = "aikit";
         this.wakeEngineCredentials = Collections.emptyMap();
+        this.recorderType = "android";
     }
 
     // Getters and Setters
@@ -89,4 +92,7 @@ public class RobotConfig {
 
     public Map<String, String> getWakeEngineCredentials() { return wakeEngineCredentials; }
     public void setWakeEngineCredentials(Map<String, String> credentials) { this.wakeEngineCredentials = credentials; }
+
+    public String getRecorderType() { return recorderType; }
+    public void setRecorderType(String type) { this.recorderType = type; }
 }

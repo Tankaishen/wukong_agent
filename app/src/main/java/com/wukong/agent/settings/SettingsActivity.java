@@ -1,9 +1,11 @@
 package com.wukong.agent.settings;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -11,9 +13,11 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.wukong.agent.R;
+import com.wukong.agent.service.PermissionActivity;
 
 public class SettingsActivity extends AppCompatActivity {
 
+    private static final String TAG = "SettingsActivity";
     private static final int REQUEST_POST_NOTIFICATIONS = 1001;
 
     @Override
@@ -28,8 +32,25 @@ public class SettingsActivity extends AppCompatActivity {
                     .commit();
         }
 
+        ensureAudioPermission();
+
         // Android 13+ 需要运行时请求通知权限
         requestNotificationPermissionIfNeeded();
+
+    }
+
+    private boolean ensureAudioPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG,"AUDIORECORDER PERMISSION GRANTED");
+            return true;
+        }
+        Log.d(TAG,"AUDIORECORDER PERMISSION NOT GRANTED");
+        // Launch transparent Activity to show system permission dialog
+        Intent permIntent = new Intent(this, PermissionActivity.class);
+        permIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(permIntent);
+        return false;
     }
 
     private void requestNotificationPermissionIfNeeded() {

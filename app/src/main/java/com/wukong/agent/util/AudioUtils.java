@@ -12,9 +12,14 @@ public class AudioUtils {
      * Convert PCM 16bit byte array to Base64 string
      */
     public static String pcmToBase64(byte[] pcmData) {
-        return Base64.encodeToString(pcmData, Base64.NO_WRAP);
+//        return Base64.encodeToString(pcmData, Base64.NO_WRAP);
+        return pcmToBase64(pcmData, pcmData.length);
     }
 
+    public static String pcmToBase64(byte[] pcmData, int length) {
+        // 关键：使用Base64的offset和length参数
+        return Base64.encodeToString(pcmData, 0, length, Base64.NO_WRAP);
+    }
     /**
      * Convert Base64 string to PCM 16bit byte array
      */

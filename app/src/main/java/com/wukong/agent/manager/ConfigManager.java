@@ -21,6 +21,7 @@ public class ConfigManager {
 
     private static final String TAG = "ConfigManager";
     private static final String WAKE_ENGINE_CONFIG = "wake_engine.properties";
+    private static final String RECORDER_CONFIG = "recorder.properties";
 
     private final Context context;
     private final SharedPreferences prefs;
@@ -92,6 +93,9 @@ public class ConfigManager {
         // From assets/wake_engine.properties (engine type + credentials)
         loadWakeEngineConfig(config);
 
+        // From assets/recorder.properties (recorder type)
+        loadRecorderConfig(config);
+
         return config;
     }
 
@@ -153,7 +157,31 @@ public class ConfigManager {
     public String getWakeEngineType() { return currentConfig.getWakeEngineType(); }
     public Map<String, String> getWakeEngineCredentials() { return currentConfig.getWakeEngineCredentials(); }
 
+    public String getRecorderType() { return currentConfig.getRecorderType(); }
+
     public void release() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
+    }
+
+    /**
+     * Load recorder type from assets/recorder.properties.
+     * File format:
+     *   recorder.type=android
+     * Supported values: "android", "ubt"
+     */
+    private void loadRecorderConfig(RobotConfig config) {
+        try (InputStream is = context.getAssets().open(RECORDER_CONFIG)) {
+            Properties props = new Properties();
+            props.load(is);
+
+            String recorderType = props.getProperty("recorder.type", "android").trim();
+            config.setRecorderType(recorderType);
+
+            Log.i(TAG, "Recorder config loaded: type=" + recorderType);
+
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to load recorder config from " + RECORDER_CONFIG, e);
+            // Keep default (android)
+        }
     }
 }
