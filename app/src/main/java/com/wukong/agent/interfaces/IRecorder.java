@@ -22,6 +22,22 @@ public interface IRecorder {
     interface AudioListener {
         /** Single-channel PCM data ready for ASR transmission. */
         void onAudioData(byte[] pcmData);
+
+        /**
+         * Single-channel PCM data with explicit length.
+         * Supports pre-allocated buffers where only the first {@code length} bytes are valid.
+         * Default implementation delegates to {@link #onAudioData(byte[])} with a trimmed copy.
+         */
+        default void onAudioData(byte[] pcmData, int length) {
+            if (length == pcmData.length) {
+                onAudioData(pcmData);
+            } else {
+                byte[] trimmed = new byte[length];
+                System.arraycopy(pcmData, 0, trimmed, 0, length);
+                onAudioData(trimmed);
+            }
+        }
+
         /** VAD detected user started speaking. */
         void onVadSpeechStart();
         /** VAD detected user stopped speaking. */

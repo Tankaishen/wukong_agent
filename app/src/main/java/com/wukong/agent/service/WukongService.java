@@ -327,6 +327,9 @@ public class WukongService extends Service implements
      * Unified interrupt handler for PROCESSING and PLAYING states.
      * Stops all output (TTS, actions), cancels the current WS session,
      * then transitions to WAKEUP which plays beep_hi and starts a new recording.
+     *
+     * TTS stop is asynchronous — the state transition happens in a callback
+     * after AudioTrack is fully released, avoiding a main-thread busy-wait.
      */
     private void handleInterrupt(String reason) {
         Log.i(TAG, "handleInterrupt: " + reason);
@@ -337,8 +340,19 @@ public class WukongService extends Service implements
             webSocketManager.cancelSession(sessionId);
         }
 
-        // 2. Stop TTS playback immediately
-        ttsEngine.stopPlayback();
+        // 2. Stop TTS playback — async; callback fires on main thread when fully stopped.
+        //    State transition is deferred to the callback to avoid main-thread busy-wait (ANR).
+        ttsEngine.stopPlayback(() -> {
+            // Guard: only transition if still in an interruptible state.
+            // Prevents double-transition if handleInterrupt is called multiple times
+            // before the first callback fires (e.g. two wake words in rapid succession).
+            BusinessState current = stateMachine.getCurrentState();
+            if (current == BusinessState.PROCESSING || current == BusinessState.PLAYING) {
+                stateMachine.forceTransitionTo(BusinessState.WAKEUP, reason);
+            } else {
+                Log.d(TAG, "handleInterrupt callback: state already " + current + ", skipping transition");
+            }
+        });
 
         // 3. Stop robot actions
         robotActionManager.stopAction();
@@ -348,11 +362,6 @@ public class WukongService extends Service implements
 
         // 5. Stop wakeup listening and wake engine
         audioRecorderManager.stopWakeupListening();
-//        wakeUpEngine.stopListening();
-
-        while(TTSEngine.isPlaying());
-        // 6. Transition to WAKEUP — plays beep_hi, reconnects WS, then auto-transitions to RECORDING
-        stateMachine.forceTransitionTo(BusinessState.WAKEUP, reason);
     }
 
     @Override
@@ -368,6 +377,17 @@ public class WukongService extends Service implements
         if (stateMachine.getCurrentState() != BusinessState.RECORDING) return;
 
         String base64 = AudioUtils.pcmToBase64(pcmData);
+        String sessionId = audioRecorderManager.getCurrentSessionId();
+        webSocketManager.sendChatMessage(sessionId, base64, false);
+    }
+
+    @Override
+    public void onAudioData(byte[] pcmData, int length) {
+        if (stateMachine.getCurrentState() != BusinessState.RECORDING) return;
+
+        // Use the length-aware overload to avoid an unnecessary array copy —
+        // pcmToBase64(byte[], int) reads only the first 'length' bytes.
+        String base64 = AudioUtils.pcmToBase64(pcmData, length);
         String sessionId = audioRecorderManager.getCurrentSessionId();
         webSocketManager.sendChatMessage(sessionId, base64, false);
     }

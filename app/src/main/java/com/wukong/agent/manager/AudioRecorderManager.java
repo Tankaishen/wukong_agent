@@ -36,6 +36,22 @@ public class AudioRecorderManager implements
      */
     public interface AudioListener {
         void onAudioData(byte[] pcmData);           // 单声道 PCM 数据，可用于 ASR 发送
+
+        /**
+         * Single-channel PCM data with explicit length.
+         * Supports pre-allocated buffers where only the first {@code length} bytes are valid.
+         * Default implementation makes a trimmed copy and delegates to {@link #onAudioData(byte[])}.
+         */
+        default void onAudioData(byte[] pcmData, int length) {
+            if (length == pcmData.length) {
+                onAudioData(pcmData);
+            } else {
+                byte[] trimmed = new byte[length];
+                System.arraycopy(pcmData, 0, trimmed, 0, length);
+                onAudioData(trimmed);
+            }
+        }
+
         void onVadSpeechStart();                    // 检测到用户开始说话
         void onVadSpeechEnd();                      // 检测到用户停止说话
         void onRecordingError(String errorMessage);  // 录音发生错误
@@ -59,6 +75,13 @@ public class AudioRecorderManager implements
     public void onAudioData(byte[] pcmData) {
         if (externalAsrListener != null) {
             externalAsrListener.onAudioData(pcmData);
+        }
+    }
+
+    @Override
+    public void onAudioData(byte[] pcmData, int length) {
+        if (externalAsrListener != null) {
+            externalAsrListener.onAudioData(pcmData, length);
         }
     }
 

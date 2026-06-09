@@ -31,8 +31,18 @@ public interface IWakeUpEngine {
     /** Stop listening */
     void stopListening();
 
-    /** Feed audio data */
+    /** Feed audio data (full array) */
     void feedAudioData(byte[] pcmData);
+
+    /**
+     * Feed audio data with explicit length.
+     * The caller may reuse the buffer across calls — implementations must copy
+     * the data if they consume it asynchronously.
+     *
+     * @param pcmData audio buffer (may be reused by caller after return)
+     * @param length  number of valid bytes in pcmData
+     */
+    void feedAudioData(byte[] pcmData, int length);
 
     /** Dynamically update wake word config */
     void updateWakeWordConfig(boolean wukongEnabled, boolean nihaoEnabled,

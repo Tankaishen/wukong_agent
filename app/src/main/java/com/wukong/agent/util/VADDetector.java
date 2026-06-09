@@ -43,7 +43,19 @@ public class VADDetector {
      * @param chunkDurationMs Duration of this chunk in milliseconds
      */
     public void processAudioChunk(byte[] pcmData, long chunkDurationMs) {
-        double rmsEnergy = AudioUtils.calculateRmsEnergy(pcmData);
+        processAudioChunk(pcmData, pcmData.length, chunkDurationMs);
+    }
+
+    /**
+     * Process a chunk of PCM audio data for VAD detection with explicit length.
+     * Supports pre-allocated buffers where only the first {@code length} bytes are valid.
+     *
+     * @param pcmData PCM 16bit audio buffer (may be larger than valid data)
+     * @param length  Number of valid bytes in pcmData
+     * @param chunkDurationMs Duration of this chunk in milliseconds
+     */
+    public void processAudioChunk(byte[] pcmData, int length, long chunkDurationMs) {
+        double rmsEnergy = AudioUtils.calculateRmsEnergy(pcmData, length);
         long now = System.currentTimeMillis();
 
         if (rmsEnergy > energyThreshold) {

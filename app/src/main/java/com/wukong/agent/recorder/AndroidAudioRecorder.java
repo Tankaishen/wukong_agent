@@ -76,6 +76,13 @@ public class AndroidAudioRecorder implements IRecorder {
     private volatile AudioRecord audioRecord;
     private Thread readThread;
 
+    // Pre-allocated copy buffers to avoid per-frame allocation & GC pressure.
+    // wakeupBuffer: copy for wake engine (async consumer — must own its data)
+    // asrBuffer: copy for ASR + VAD (sync consumer — data consumed before next frame)
+    // Both are sized to BUFFER_SIZE (the maximum AudioRecord.read() can return).
+    private byte[] wakeupBuffer;
+    private byte[] asrBuffer;
+
     // ==================== Configuration ====================
 
     @Override
@@ -199,6 +206,9 @@ public class AndroidAudioRecorder implements IRecorder {
         readThread = new Thread(() -> {
             Log.i(TAG, "Read thread started");
             byte[] buffer = new byte[BUFFER_SIZE];
+            // Pre-allocate copy buffers once — reused every frame instead of new byte[]
+            wakeupBuffer = new byte[BUFFER_SIZE];
+            asrBuffer = new byte[BUFFER_SIZE];
 
             while (reading.get() && audioRecord != null) {
                 int bytesRead = audioRecord.read(buffer, 0, buffer.length);
@@ -207,30 +217,33 @@ public class AndroidAudioRecorder implements IRecorder {
                     continue;
                 }
 
-                // Forward wakeup audio
+                // Forward wakeup audio — wake engine consumes asynchronously,
+                // so it must own its data copy. Reuse wakeupBuffer each frame
+                // (previous frame's data has already been submitted to executor).
                 if (wakeupListening.get() && wakeUpEngine != null && wakeUpEngine.isListening()) {
-                    byte[] wakeupChunk = new byte[bytesRead];
-                    System.arraycopy(buffer, 0, wakeupChunk, 0, bytesRead);
-                    wakeUpEngine.feedAudioData(wakeupChunk);
+                    System.arraycopy(buffer, 0, wakeupBuffer, 0, bytesRead);
+                    wakeUpEngine.feedAudioData(wakeupBuffer, bytesRead);
                 }
 
-                // Forward ASR audio + VAD
+                // Forward ASR audio + VAD — ASR listener consumes synchronously
+                // (pcmToBase64 + WebSocket send), so reusing asrBuffer is safe.
                 if (asrRecording.get()) {
-                    byte[] asrChunk = new byte[bytesRead];
-                    System.arraycopy(buffer, 0, asrChunk, 0, bytesRead);
+                    System.arraycopy(buffer, 0, asrBuffer, 0, bytesRead);
 
                     // VAD on single-channel data
                     if (vadDetector != null) {
-                        long chunkDurationMs = (asrChunk.length / 2) * 1000L / SAMPLE_RATE;
-                        vadDetector.processAudioChunk(asrChunk, chunkDurationMs);
+                        long chunkDurationMs = (bytesRead / 2) * 1000L / SAMPLE_RATE;
+                        vadDetector.processAudioChunk(asrBuffer, bytesRead, chunkDurationMs);
                     }
 
                     if (asrListener != null) {
-                        asrListener.onAudioData(asrChunk);
+                        asrListener.onAudioData(asrBuffer, bytesRead);
                     }
                 }
             }
 
+            wakeupBuffer = null;
+            asrBuffer = null;
             Log.i(TAG, "Read thread exited");
         }, "AudioRecord-ReadThread");
 

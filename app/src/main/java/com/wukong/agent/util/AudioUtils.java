@@ -56,10 +56,18 @@ public class AudioUtils {
      * Calculate RMS energy of PCM 16bit audio data
      */
     public static double calculateRmsEnergy(byte[] pcmData) {
-        if (pcmData == null || pcmData.length == 0) return 0;
+        return calculateRmsEnergy(pcmData, pcmData.length);
+    }
+
+    /**
+     * Calculate RMS energy of PCM 16bit audio data with explicit length.
+     * Supports pre-allocated buffers where only the first {@code length} bytes are valid.
+     */
+    public static double calculateRmsEnergy(byte[] pcmData, int length) {
+        if (pcmData == null || length == 0) return 0;
 
         long sum = 0;
-        int samples = pcmData.length / 2;
+        int samples = length / 2;
         for (int i = 0; i < samples; i++) {
             short sample = (short) ((pcmData[i * 2] & 0xFF) | (pcmData[i * 2 + 1] << 8));
             sum += (long) sample * sample;

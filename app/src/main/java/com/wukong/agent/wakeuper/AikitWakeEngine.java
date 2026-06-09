@@ -327,10 +327,21 @@ public class AikitWakeEngine implements IWakeUpEngine {
 
     @Override
     public void feedAudioData(byte[] pcmData) {
+        feedAudioData(pcmData, pcmData.length);
+    }
+
+    @Override
+    public void feedAudioData(byte[] pcmData, int length) {
         if (!isListening.get() || aiHandle == null) {
             Log.w(TAG, "Cannot feed audio: not listening or aiHandle is null");
             return;
         }
+
+        // Must copy: the caller may reuse the buffer (e.g. pre-allocated copy buffer
+        // in AndroidAudioRecorder), and we submit to executor asynchronously.
+        // Without copying, the executor would read stale/overwritten data.
+        final byte[] data = new byte[length];
+        System.arraycopy(pcmData, 0, data, 0, length);
 
         executor.execute(() -> {
             try {
@@ -340,7 +351,7 @@ public class AikitWakeEngine implements IWakeUpEngine {
                         : AiStatus.CONTINUE;
 
                 AiAudio aiAudio = AiAudio.get("wav")
-                    .data(pcmData)
+                    .data(data)
                     .status(status)
                     .valid();
 

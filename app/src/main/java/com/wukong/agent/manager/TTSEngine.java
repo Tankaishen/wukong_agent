@@ -197,10 +197,24 @@ public class TTSEngine {
 
     /**
      * Stop playback immediately (for interruption).
+     * Fire-and-forget: returns immediately, stop happens asynchronously.
      */
     public void stopPlayback() {
-        isInterrupted.set(true);
+        stopPlayback(null);
+    }
 
+    /**
+     * Stop playback immediately (for interruption), with a callback when fully stopped.
+     * The callback runs on the main thread via Handler.
+     *
+     * If AudioTrack was already released (not playing), the callback still fires,
+     * so callers can safely put post-stop logic in the callback without additional guards.
+     *
+     * @param onStopped Optional callback invoked on the main thread after playback is fully stopped.
+     *                  May be null for fire-and-forget behavior.
+     */
+    public void stopPlayback(Runnable onStopped) {
+        isInterrupted.set(true);
 
         executor.execute(() -> {
             if (audioTrack != null) {
@@ -218,6 +232,11 @@ public class TTSEngine {
                 audioTrack = null;
                 isPlaying.set(false);
                 isInitialized.set(false);
+            }
+            // Always notify callback — even if audioTrack was null (already stopped),
+            // so callers can unconditionally put post-stop logic here.
+            if (onStopped != null) {
+                handler.post(onStopped);
             }
         });
 
