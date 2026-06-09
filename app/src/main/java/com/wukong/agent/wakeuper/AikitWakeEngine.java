@@ -103,6 +103,12 @@ public class AikitWakeEngine implements IWakeUpEngine {
     private boolean nihaoEnabled = true;
     // Tracks whether keyword file needs rewriting (true on first init or config change)
     private volatile boolean keywordDirty = true;
+    public InitCallback initCallback;
+
+    @Override
+    public void setInitCallback(InitCallback callback){
+        initCallback = callback;
+    }
 
     public AikitWakeEngine() {
         // No-arg constructor; Context is provided via init()
@@ -188,8 +194,8 @@ public class AikitWakeEngine implements IWakeUpEngine {
                 AiHelper.getInst().registerListener(ABILITY_ID, aiListener);
 
                 isInitialized = true;
+                initCallback.onInitComplete();
                 Log.i(TAG, "AIKit SDK initialized (appId=" + appId.trim() + ")");
-
             } catch (Exception e) {
                 Log.e(TAG, "Failed to initialize AIKit", e);
                 notifyError("AIKit init failed: " + e.getMessage());
@@ -284,47 +290,6 @@ public class AikitWakeEngine implements IWakeUpEngine {
             }
         });
     }
-
-//    @Override
-//    public void stopListening() {
-//        if (!isListening.get()) return;
-//
-//        executor.execute(() -> {
-//            try {
-//                if (aiHandle != null) {
-//                    // Step 1: Send END frame to signal audio stream completion
-//                    AiAudio endAudio = AiAudio.get("wav")
-//                        .data(new byte[0])
-//                        .status(AiStatus.END)
-//                        .valid();
-//
-//                    AiRequest.Builder endBuilder = AiRequest.builder();
-//                    endBuilder.payload(endAudio);
-//                    int writeRet = AiHelper.getInst().write(endBuilder.build(), aiHandle);
-//                    if (writeRet != 0) {
-//                        Log.w(TAG, "END frame write() returned: " + writeRet);
-//                    } else {
-//                        Log.d(TAG, "END frame sent successfully");
-//                    }
-//
-//                    // Step 2: End the engine session
-//                    int ret = AiHelper.getInst().end(aiHandle);
-//                    if (ret == 0) {
-//                        Log.i(TAG, "Stopped listening (end success)");
-//                    } else {
-//                        Log.w(TAG, "end() returned: " + ret);
-//                    }
-//                    aiHandle = null;
-//                }
-//                isListening.set(false);
-//                firstFrameSent.set(false); // Reset for next startListening cycle
-//            } catch (Exception e) {
-//                Log.e(TAG, "Failed to stop listening", e);
-//                isListening.set(false);
-//                firstFrameSent.set(false);
-//            }
-//        });
-//    }
 
     @Override
     public void stopListening() {

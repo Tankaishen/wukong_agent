@@ -55,6 +55,7 @@ public class AndroidAudioRecorder implements IRecorder {
      *  so we retry indefinitely until success or release(). */
     private static final long RETRY_INTERVAL_MS = 3000;
 
+    private String currentSessionId;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -70,7 +71,6 @@ public class AndroidAudioRecorder implements IRecorder {
     private final AtomicBoolean asrRecording = new AtomicBoolean(false);
     private final AtomicBoolean reading = new AtomicBoolean(false);
     private final AtomicBoolean initAborted = new AtomicBoolean(false);
-    private String currentSessionId;
 
     // AudioRecord instance
     private volatile AudioRecord audioRecord;
@@ -117,13 +117,7 @@ public class AndroidAudioRecorder implements IRecorder {
             return;
         }
         initAborted.set(false);
-
-        // Notify init started immediately — don't block service startup.
-        // The recorder may not be ready yet (AudioFlinger boot delay),
-        // but the service can proceed. onRecorderReady() will be called
-        // once AudioRecord actually starts capturing.
-        handler.post(() -> { if (callback != null) callback.onInitComplete(); });
-
+//        handler.post(() -> { if (callback != null) callback.onInitComplete();});
         executor.execute(() -> initWithRetry(callback, 0));
     }
 
@@ -138,11 +132,6 @@ public class AndroidAudioRecorder implements IRecorder {
      * only when AudioRecord actually starts recording.
      */
     private void initWithRetry(InitCallback callback, int attempt) {
-//        if (initAborted.get()) {
-//            Log.i(TAG, "Init aborted (release called), stopping retries");
-//            return;
-//        }
-
         try {
             audioRecord = new AudioRecord(
                     MediaRecorder.AudioSource.VOICE_RECOGNITION,
@@ -171,6 +160,7 @@ public class AndroidAudioRecorder implements IRecorder {
             initialized.set(true);
             Log.i(TAG, "AudioRecord initialized successfully on attempt " + (attempt + 1)
                     + " (bufferSize=" + BUFFER_SIZE + ")");
+            handler.post(() -> { if (callback != null) callback.onInitComplete();});
 
             audioRecord.startRecording();
             hardwareReady.set(true);

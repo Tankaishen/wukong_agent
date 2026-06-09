@@ -17,7 +17,12 @@ import java.util.Properties;
 
 public class ConfigManager {
 
+    public interface ConfigListener{
+        void onConfigChanged(RobotConfig config);
+    }
+
     private static volatile ConfigManager INSTANCE;
+    private ConfigListener configListener;
 
     private static final String TAG = "ConfigManager";
     private static final String WAKE_ENGINE_CONFIG = "wake_engine.properties";
@@ -66,7 +71,6 @@ public class ConfigManager {
         RobotConfig config = new RobotConfig();
 
         // From SharedPreferences (user-adjustable settings)
-//        config.setWsServerUrl(prefs.getString("ws_server_url", config.getWsServerUrl()));
         String savedWsUrl = prefs.getString("ws_server_url", null);
         if (savedWsUrl == null || savedWsUrl.contains("localhost") || savedWsUrl.contains("127.0.0.1")) {
             // If no saved URL or it's localhost (default from old version), use the new default from RobotConfig
@@ -130,10 +134,8 @@ public class ConfigManager {
                 }
             }
             config.setWakeEngineCredentials(credentials);
-
             Log.i(TAG, "Wake engine config loaded: type=" + engineType
                     + ", credentials keys=" + credentials.keySet());
-
         } catch (IOException e) {
             Log.e(TAG, "Failed to load wake engine config from " + WAKE_ENGINE_CONFIG, e);
             // Keep defaults (aikit with empty credentials)
@@ -142,6 +144,15 @@ public class ConfigManager {
 
     // ==================== Convenience Getters ====================
 
+    public void setConfigListener(ConfigListener cListener){
+        if (configListener != null) {
+            getConfigLiveData().removeObserver(configListener::onConfigChanged);
+        }
+        this.configListener = cListener;
+        if (cListener != null) {
+            getConfigLiveData().observeForever(this.configListener::onConfigChanged);
+        }
+    }
     public String getWsServerUrl() { return currentConfig.getWsServerUrl(); }
     public boolean isWakeWukongEnabled() { return currentConfig.isWakeWukongEnabled(); }
     public boolean isWakeNihaoEnabled() { return currentConfig.isWakeNihaoEnabled(); }
@@ -161,6 +172,11 @@ public class ConfigManager {
 
     public void release() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
+        if (configListener!=null){
+            getConfigLiveData().removeObserver(this.configListener::onConfigChanged);
+            configListener = null;
+        }
+        configListener = null;
     }
 
     /**

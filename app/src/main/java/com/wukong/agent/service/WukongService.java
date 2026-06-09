@@ -21,7 +21,6 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
-import com.ubtrobot.api.WkSdk;
 import com.wukong.agent.R;
 import com.wukong.agent.coordinator.RobotStateCoordinator;
 import com.wukong.agent.data.db.WukongDatabase;
@@ -45,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 
 public class WukongService extends Service implements
         StateChangeListener,
+        ConfigManager.ConfigListener,
         IWakeUpEngine.WakeUpListener,
         IWakeUpEngine.InitCallback,
         AudioRecorderManager.AudioListener,
@@ -109,7 +109,7 @@ public class WukongService extends Service implements
     private ActionRepository actionRepository;
 
     // State
-    private final Handler handler = new Handler(Looper.getMainLooper());
+//    private final Handler handler = new Handler(Looper.getMainLooper());
     private NotificationManager notificationManager;
     private RemoteViews notificationLayout;
 
@@ -179,8 +179,6 @@ public class WukongService extends Service implements
     private void initComponents() {
 
         initLatch = new CountDownLatch(2);
-        // Initialize robot SDK
-        WkSdk.INSTANCE.init(this);
         // Database
         database = WukongDatabase.getInstance(this);
         chatHistoryRepository = new ChatHistoryRepository(database.chatHistoryDao());
@@ -195,13 +193,15 @@ public class WukongService extends Service implements
         // Config — observeForever may fire onConfigChanged immediately if LiveData has a cached value,
         // so all components referenced in onConfigChanged must already be initialized.
         configManager = ConfigManager.getInstance(this);
-        configManager.getConfigLiveData().observeForever(this::onConfigChanged);
+        configManager.setConfigListener(this);
+//        configManager.getConfigLiveData().observeForever(this::onConfigChanged);
         stateMachine.applyConfigToStateMachine(configManager.getConfig());
 
         // Wake engine (created via factory based on config)
         RobotConfig config = configManager.getConfig();
         wakeUpEngine = WakeEngineFactory.create(config.getWakeEngineType());
         wakeUpEngine.setListener(this);
+        wakeUpEngine.setInitCallback(this);
         wakeUpEngine.init(this, config.getWakeEngineCredentials());
 
         audioRecorderManager = new AudioRecorderManager(this, config.getRecorderType());
@@ -248,15 +248,8 @@ public class WukongService extends Service implements
         updateNotification(newState);
 
         switch (newState) {
-//            case Booting:
-//                promptPlayer.play(PromptPlayer.Prompt.RECORD_END, null);
             case IDLE:
-                // Stop wake engine listening from previous cycle
-//                wakeUpEngine.stopListening();
-                // Stop ASR recording if it was active
                 audioRecorderManager.stopAsrRecording();
-
-                // Start wake word listening: register FOR_WAKEUP listener + start wake engine
                 audioRecorderManager.startWakeupListening();
 //                wakeUpEngine.startListening();
                 break;
@@ -419,14 +412,18 @@ public class WukongService extends Service implements
 
     @Override
     public void onMessage(WebSocketMessage message) {
-        if (message.getSessionId().equals(audioRecorderManager.getCurrentSessionId())&&message.isTts()) {
+        String msgSessionId = message.getSessionId();
+        String currentSessionId = audioRecorderManager.getCurrentSessionId();
+        boolean sessionMatch = msgSessionId != null && msgSessionId.equals(currentSessionId);
+
+        if (sessionMatch && message.isTts()) {
             handleTtsMessage(message);
         } else if (message.isError()) {
             Log.e(TAG, "Server error: " + message.getError());
             stateMachine.forceTransitionTo(BusinessState.IDLE, "server_error");
         } else {
-            Log.e(TAG,"message             =" + message.getSessionId());
-            Log.e(TAG,"audioRecorderManager=" + audioRecorderManager.getCurrentSessionId());
+            Log.w(TAG, "Message session mismatch or unknown type: msgSession=" + msgSessionId
+                    + ", currentSession=" + currentSessionId + ", isTts=" + message.isTts());
         }
     }
 
@@ -501,7 +498,8 @@ public class WukongService extends Service implements
 
     // ==================== Config Change ====================
 
-    private void onConfigChanged(RobotConfig config) {
+    @Override
+    public void onConfigChanged(RobotConfig config) {
         if (config == null) return;
 
         // Apply timeout settings
@@ -623,7 +621,7 @@ public class WukongService extends Service implements
         if (robotActionManager != null) robotActionManager.release();
         if (stateMachine != null) stateMachine.cleanup();
         if (configManager != null) {
-            configManager.getConfigLiveData().removeObserver(this::onConfigChanged);
+//            configManager.getConfigLiveData().removeObserver(this::onConfigChanged);
             configManager.release();
         }
     }

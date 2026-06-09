@@ -16,7 +16,8 @@ public class BusinessStateMachine {
 
     private BusinessState currentState = BusinessState.IDLE;
     private final List<StateChangeListener> listeners = new CopyOnWriteArrayList<>();
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private Handler handler = new Handler(Looper.getMainLooper());
+//    private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<Runnable> timeoutRunnables = new ArrayList<>();
 
     // Timeout configuration (defaults, can be overridden by ConfigManager)
@@ -166,6 +167,10 @@ public class BusinessStateMachine {
 
     public void cleanup() {
         cancelAllTimeouts();
+        if (handler != null) {
+            handler.removeCallbacksAndMessages(null);
+            handler = null;
+        }
         listeners.clear();
     }
 }

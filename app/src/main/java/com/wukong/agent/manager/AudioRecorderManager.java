@@ -24,7 +24,9 @@ import com.wukong.agent.interfaces.IWakeUpEngine;
  * - "android": AndroidAudioRecorder (android.media.AudioRecord, default)
  * - "ubt":     UbtAudioRecorder (UBT PreProcessedRecorder SDK, 6-mic array)
  */
-public class AudioRecorderManager {
+public class AudioRecorderManager implements
+        IRecorder.AudioListener,
+        IRecorder.InitCallback {
 
     private static final String TAG = "AudioRecorderManager";
 
@@ -45,60 +47,58 @@ public class AudioRecorderManager {
         void onRecorderReady();
     }
 
+    private AudioListener externalAsrListener;
     private final IRecorder recorder;
     private final Context context;
-    private final Handler handler = new Handler(Looper.getMainLooper());
+//    private final Handler handler = new Handler(Looper.getMainLooper());
     private InitCallback externalInitCallback;
 
     // Bridge: adapt IRecorder callbacks to AudioRecorderManager's listener types
-    private final IRecorder.AudioListener internalAsrListener = new IRecorder.AudioListener() {
-        @Override
-        public void onAudioData(byte[] pcmData) {
-            if (externalAsrListener != null) {
-                externalAsrListener.onAudioData(pcmData);
-            }
+//    private final IRecorder.AudioListener internalAsrListener = new IRecorder.AudioListener() {
+    @Override
+    public void onAudioData(byte[] pcmData) {
+        if (externalAsrListener != null) {
+            externalAsrListener.onAudioData(pcmData);
         }
+    }
 
-        @Override
-        public void onVadSpeechStart() {
-            if (externalAsrListener != null) {
-                externalAsrListener.onVadSpeechStart();
-            }
+    @Override
+    public void onVadSpeechStart() {
+        if (externalAsrListener != null) {
+            externalAsrListener.onVadSpeechStart();
         }
+    }
 
-        @Override
-        public void onVadSpeechEnd() {
-            if (externalAsrListener != null) {
-                externalAsrListener.onVadSpeechEnd();
-            }
+    @Override
+    public void onVadSpeechEnd() {
+        if (externalAsrListener != null) {
+            externalAsrListener.onVadSpeechEnd();
         }
+    }
 
-        @Override
-        public void onRecordingError(String errorMessage) {
-            if (externalAsrListener != null) {
-                externalAsrListener.onRecordingError(errorMessage);
-            }
+    @Override
+    public void onRecordingError(String errorMessage) {
+        if (externalAsrListener != null) {
+            externalAsrListener.onRecordingError(errorMessage);
         }
-    };
-
-    private AudioListener externalAsrListener;
-
+    }
+//    };
     // Bridge: adapt IRecorder.InitCallback to AudioRecorderManager.InitCallback
-    private final IRecorder.InitCallback internalInitCallback = new IRecorder.InitCallback() {
-        @Override
-        public void onInitComplete() {
-            if (externalInitCallback != null) {
-                externalInitCallback.onInitComplete();
-            }
+//    private final IRecorder.InitCallback internalInitCallback = new IRecorder.InitCallback() {
+    @Override
+    public void onInitComplete() {
+        if (externalInitCallback != null) {
+            externalInitCallback.onInitComplete();
         }
+    }
 
-        @Override
-        public void onRecorderReady() {
-            if (externalInitCallback != null) {
-                externalInitCallback.onRecorderReady();
-            }
+    @Override
+    public void onRecorderReady() {
+        if (externalInitCallback != null) {
+            externalInitCallback.onRecorderReady();
         }
-    };
+    }
+//    };
 
     /**
      * Create AudioRecorderManager with the specified recorder type.
@@ -116,7 +116,7 @@ public class AudioRecorderManager {
 
     public void setAsrListener(AudioListener listener) {
         this.externalAsrListener = listener;
-        recorder.setAsrListener(internalAsrListener);
+        recorder.setAsrListener(this);
     }
 
     public void setInitCallback(InitCallback callback) {
@@ -142,7 +142,8 @@ public class AudioRecorderManager {
      * Must be called before any start/stop operations.
      */
     public void init() {
-        recorder.init(context, internalInitCallback);
+//        recorder.init(context, internalInitCallback);
+        recorder.init(context, this);
     }
 
     // ==================== Wakeup Audio Control ====================
@@ -185,9 +186,9 @@ public class AudioRecorderManager {
 
     // ==================== State Queries ====================
 
-    public boolean isRecorderInitialized() {
-        return recorder.isReady();
-    }
+//    public boolean isRecorderInitialized() {
+//        return recorder.isReady();
+//    }
 
     /** Returns true if both init and hardware start succeeded. */
     public boolean isRecorderReady() {

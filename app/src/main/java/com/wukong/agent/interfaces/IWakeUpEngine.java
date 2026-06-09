@@ -23,6 +23,7 @@ public interface IWakeUpEngine {
 //    void init(Context context, Map<String, String> credentials, InitCallback callback);
     /** Set result callback */
     void setListener(WakeUpListener listener);
+    void setInitCallback(InitCallback callback);
 
     /** Start listening for wake words */
     void startListening();
@@ -45,4 +46,6 @@ public interface IWakeUpEngine {
 
     /** Whether engine is currently listening */
     boolean isListening();
+
+
 }
